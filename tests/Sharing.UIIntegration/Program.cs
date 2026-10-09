@@ -28,7 +28,7 @@ internal static class Program
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var fixtureDirectory = Path.Combine(Path.GetTempPath(), "EZConverter-Sharing-UI-" + Guid.NewGuid().ToString("N"));
         var stateDirectory = Path.Combine(fixtureDirectory, "app-state");
-        var sharing = new SharingView(stateDirectory);
+        var sharing = new SharingView(stateDirectory, localSendHttpsPort: 0);
         var window = new Window
         {
             Title = "EZ Converter · 共有UI統合テスト",
@@ -57,7 +57,8 @@ internal static class Program
                 foreach (var controlName in new[]
                 {
                     "RegisteredContactNameBox", "RegistrationCodeBox", "AddRegisteredContactButton",
-                    "RemoveRegisteredContactButton", "RegisteredContactsBox", "SendRegisteredContactButton"
+                    "RemoveRegisteredContactButton", "RegisteredContactsBox", "SendRegisteredContactButton",
+                    "RotateNamedTunnelInvitationButton"
                 })
                 {
                     if (sharing.FindName(controlName) is null)
@@ -116,23 +117,45 @@ internal static class Program
                     ?? throw new InvalidOperationException("The LocalSend connection URL control is missing.");
                 var connectionUri = new Uri(connectionBox.Text);
                 var fingerprint = connectionUri.Fragment.TrimStart('#');
-                var uploadEndpoint = new UriBuilder(connectionUri) { Path = "/api/localsend/v2/prepare-upload", Query = "", Fragment = "" }.Uri;
+                var uploadEndpoint = new UriBuilder(connectionUri)
+                {
+                    Host = "127.0.0.1",
+                    Path = "/api/localsend/v2/prepare-upload",
+                    Query = "",
+                    Fragment = ""
+                }.Uri;
+                string? observedServerFingerprint = null;
                 using var localSendHandler = new HttpClientHandler
                 {
                     UseProxy = false,
-                    ServerCertificateCustomValidationCallback = (_, certificate, _, _) => certificate is not null &&
-                        Convert.ToHexString(SHA256.HashData(certificate.RawData)).Equals(fingerprint, StringComparison.OrdinalIgnoreCase)
+                    ServerCertificateCustomValidationCallback = (_, certificate, _, _) =>
+                    {
+                        observedServerFingerprint = certificate is null
+                            ? null
+                            : Convert.ToHexString(SHA256.HashData(certificate.RawData));
+                        return observedServerFingerprint is not null &&
+                            observedServerFingerprint.Equals(fingerprint, StringComparison.OrdinalIgnoreCase);
+                    }
                 };
                 using var localSendHttp = new HttpClient(localSendHandler) { Timeout = TimeSpan.FromSeconds(10) };
                 var fileId = Guid.NewGuid().ToString("N");
                 var emptyFile = new LocalSendFileMetadata(fileId, "ui-pin-fixture.bin", 0, "application/octet-stream",
                     Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())));
                 var uploadRequest = new LocalSendPrepareUploadRequest(
-                    new LocalSendDeviceInfo("UI PIN fixture", Port: 53317, Protocol: "https", Fingerprint: fingerprint),
+                    new LocalSendDeviceInfo("UI PIN fixture", Port: connectionUri.Port, Protocol: "https", Fingerprint: fingerprint),
                     new Dictionary<string, LocalSendFileMetadata> { [fileId] = emptyFile });
-                using (var missingPin = await localSendHttp.PostAsJsonAsync(uploadEndpoint, uploadRequest))
+                try
+                {
+                    using var missingPin = await localSendHttp.PostAsJsonAsync(uploadEndpoint, uploadRequest);
                     if (missingPin.StatusCode != System.Net.HttpStatusCode.Unauthorized)
                         throw new InvalidOperationException("The WPF receiver did not require its configured LocalSend PIN.");
+                }
+                catch (HttpRequestException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"The WPF LocalSend TLS certificate did not match the connection URL fingerprint at {uploadEndpoint.Authority}. Expected {fingerprint}; observed {observedServerFingerprint ?? "<none>"}.",
+                        exception);
+                }
                 using var pinRequestCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var acceptedPinTask = localSendHttp.PostAsJsonAsync(uploadEndpoint + "?pin=" + receiverPin, uploadRequest, pinRequestCancellation.Token);
                 await WaitUntilAsync(() => sharing.IncomingOffers.Count == 1, TimeSpan.FromSeconds(10));
@@ -609,7 +632,14 @@ internal static class Program
         if (SharingView.ContainsActiveOnlinePeerLink([localShare]))
             throw new InvalidOperationException("A LAN-only share must not keep the public tunnel alive.");
 
-        Console.WriteLine("PASS failed online-link cleanup preserves the tunnel for other active online links");
+        var stableInvitation = new SharingView.LinkRow(
+            new LinkInfo(new string('c', 64), DateTimeOffset.MaxValue, "registered device", 0, 0, false, true),
+            "https://example.invalid/i/" + new string('c', 64), true, SharingView.OnlineTunnelProvider.Cloudflare,
+            stableRegistrationAddress: true);
+        if (!stableInvitation.StableRegistrationAddress || !stableInvitation.Status.Contains("登録コードは固定ホスト名で再利用可", StringComparison.Ordinal))
+            throw new InvalidOperationException("A reactivatable Named Tunnel invitation must identify its stable registration code in the UI.");
+
+        Console.WriteLine("PASS online-link cleanup preserves other active links and stable Named Tunnel invitations show reusable-code status");
     }
 
     private static void VerifyPeerDiscoveryStatus()

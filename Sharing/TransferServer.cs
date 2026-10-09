@@ -332,13 +332,25 @@ public sealed partial class TransferServer : IAsyncDisposable
     }
 
     public string LocalLink(LinkInfo link, string? address = null) => $"http://{FormatUriHost(address ?? LocalAddresses().FirstOrDefault() ?? "127.0.0.1")}:{HttpPort}/{(link.IsInvitation ? "i" : "s")}/{link.Token}";
-    public LinkInfo CreateInvitation(TimeSpan lifetime)
+    public LinkInfo CreateInvitation(TimeSpan lifetime) => CreateInvitation(lifetime, TransferFiles.NewToken());
+
+    /// <summary>Creates an invitation using a caller-persisted 256-bit route token.</summary>
+    public LinkInfo CreateInvitation(TimeSpan lifetime, string invitationToken)
     {
         ValidateLifetime(lifetime);
+        if (string.IsNullOrWhiteSpace(invitationToken) || invitationToken.Length != 64 || !invitationToken.All(Uri.IsHexDigit))
+            throw new ArgumentException("招待トークンには64桁の16進文字列を指定してください。", nameof(invitationToken));
         if (_invitations.Count >= 20) throw new InvalidOperationException("先に古い招待を停止してください。");
-        var info = new LinkInfo(TransferFiles.NewToken(), ExpiresAt(lifetime), DeviceName, 0, 0, false, true);
-        _invitations[info.Token] = info;
-        _invitationHostSecrets[info.Token] = TransferFiles.NewToken();
+        var token = invitationToken.ToLowerInvariant();
+        if (_shares.ContainsKey(token)) throw new InvalidOperationException("この招待トークンは別の共有で使用中です。");
+        var info = new LinkInfo(token, ExpiresAt(lifetime), DeviceName, 0, 0, false, true);
+        if (!_invitations.TryAdd(info.Token, info))
+            throw new InvalidOperationException("この招待URLはすでに有効です。");
+        if (!_invitationHostSecrets.TryAdd(info.Token, TransferFiles.NewToken()))
+        {
+            _invitations.TryRemove(info.Token, out _);
+            throw new InvalidOperationException("この招待URLの受信セッションを準備できませんでした。");
+        }
         return info;
     }
     public void RevokeLink(string token)

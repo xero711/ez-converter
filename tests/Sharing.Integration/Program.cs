@@ -31,6 +31,8 @@ if (args is ["--live-localsend-discovery"])
 var root = Path.Combine(Directory.GetCurrentDirectory(), "work", "sharing-tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var pass = 0;
+string stableIdentityForRestartTest = string.Empty;
+string stableIdentityPathForRestartTest = string.Empty;
 void Assert(bool ok, string label) { if (!ok) throw new Exception("FAIL: " + label); Console.WriteLine("PASS: " + label); pass++; }
 {
     const string tunnelToken = "tunnel-token.secret-value_123";
@@ -65,6 +67,18 @@ void Assert(bool ok, string label) { if (!ok) throw new Exception("FAIL: " + lab
     try { InvitationCodeService.CreateStructuralCode("https://127.0.0.1/i/" + token); }
     catch (FormatException) { privateAddressRejected = true; }
     Assert(privateAddressRejected, "EZC1 registration code refuses IP-address destinations");
+
+    var stableIdentityPath = Path.Combine(root, "named-tunnel", "invitation-identity.dat");
+    stableIdentityPathForRestartTest = stableIdentityPath;
+    var stableIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPath).LoadOrCreateToken();
+    var reloadedStableIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPath).LoadOrCreateToken();
+    stableIdentityForRestartTest = reloadedStableIdentity;
+    var protectedIdentity = await File.ReadAllTextAsync(stableIdentityPath);
+    Assert(stableIdentity.Length == 64 && stableIdentity.All(Uri.IsHexDigit) && stableIdentity == reloadedStableIdentity,
+        "Named Tunnel invitation identity survives a new store instance with a valid 256-bit route token");
+    Assert(protectedIdentity.StartsWith("EZNAMEDINV1:", StringComparison.Ordinal) &&
+           !protectedIdentity.Contains(stableIdentity, StringComparison.Ordinal),
+        "stable invitation route token is protected with DPAPI instead of saved as plaintext");
 
     var contactPath = Path.Combine(root, "contacts", "registered.dat");
     var contactStore = new InvitationContactStore(contactPath);
@@ -675,6 +689,39 @@ Assert(manualShare.ExpiresAt == DateTimeOffset.MaxValue, "zero lifetime creates 
 var manualInvitation = server.CreateInvitation(TimeSpan.Zero);
 var manualInvitationUrl = server.LocalLink(manualInvitation, "127.0.0.1");
 Assert(manualInvitation.ExpiresAt == DateTimeOffset.MaxValue, "zero lifetime creates a receive invitation that remains live until stopped");
+var persistentNamedInvitation = server.CreateInvitation(TimeSpan.Zero, stableIdentityForRestartTest);
+var persistentNamedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + persistentNamedInvitation.Token);
+server.RevokeLink(persistentNamedInvitation.Token);
+await using (var restartedInvitationServer = new TransferServer(new TransferServerOptions
+{
+    DeviceName = "Restarted invitation host",
+    ReceiveDirectory = Path.Combine(root, "named-tunnel", "restarted-receive"),
+    StateDirectory = Path.Combine(root, "named-tunnel", "restarted-state"),
+    HttpsPort = 0,
+    SignalPort = 0
+}))
+{
+    var recreatedInvitation = restartedInvitationServer.CreateInvitation(TimeSpan.Zero, stableIdentityForRestartTest);
+    var recreatedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + recreatedInvitation.Token);
+    Assert(recreatedInvitation.Token == persistentNamedInvitation.Token && recreatedCode == persistentNamedCode,
+        "the same Named Tunnel EZC1 registration code can be reactivated by a new server process after restart");
+}
+var rotatedNamedIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPathForRestartTest).RotateToken();
+await using (var rotatedInvitationServer = new TransferServer(new TransferServerOptions
+{
+    DeviceName = "Rotated invitation host",
+    ReceiveDirectory = Path.Combine(root, "named-tunnel", "rotated-receive"),
+    StateDirectory = Path.Combine(root, "named-tunnel", "rotated-state"),
+    HttpsPort = 0,
+    SignalPort = 0
+}))
+{
+    var rotatedInvitation = rotatedInvitationServer.CreateInvitation(TimeSpan.Zero, rotatedNamedIdentity);
+    var rotatedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + rotatedInvitation.Token);
+    Assert(rotatedInvitation.Token != persistentNamedInvitation.Token && rotatedCode != persistentNamedCode &&
+           new NamedTunnelInvitationIdentityStore(stableIdentityPathForRestartTest).LoadOrCreateToken() == rotatedNamedIdentity,
+        "rotating the Named Tunnel identity invalidates old EZC1 codes and persists the replacement token");
+}
 var expired = server.CreateShare(files, TimeSpan.FromSeconds(1));
 await Task.Delay(1100);
 Assert((await http.GetAsync(server.LocalLink(expired, "127.0.0.1") + "/manifest")).StatusCode == HttpStatusCode.Gone, "expiry enforced without maintenance tick");

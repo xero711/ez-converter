@@ -36,7 +36,9 @@ public partial class SharingView : UserControl, IAsyncDisposable
     private string? _currentOperationId;
     private DateTimeOffset? _peerDiscoveryStartedAt;
     private readonly string _stateRoot;
+    private readonly int _localSendHttpsPort;
     private readonly InvitationContactStore _registeredContactStore;
+    private readonly NamedTunnelInvitationIdentityStore _namedTunnelInvitationIdentityStore;
     public ObservableCollection<SelectedPath> SelectedFiles { get; } = [];
     public ObservableCollection<PeerDevice> Peers { get; } = [];
     public ObservableCollection<IncomingRow> IncomingOffers { get; } = [];
@@ -48,14 +50,16 @@ public partial class SharingView : UserControl, IAsyncDisposable
     public void ConfigureTurnRelay(bool enabled, string url, string sharedSecret) =>
         _server?.ConfigureTurnRelay(enabled, url, sharedSecret);
 
-    public SharingView() : this(null) { }
+    public SharingView() : this(null, TransferServer.LocalSendDefaultPort) { }
 
-    internal SharingView(string? stateRoot)
+    internal SharingView(string? stateRoot, int localSendHttpsPort = TransferServer.LocalSendDefaultPort)
     {
+        _localSendHttpsPort = localSendHttpsPort;
         _stateRoot = string.IsNullOrWhiteSpace(stateRoot)
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EZConverter", "Sharing")
             : Path.GetFullPath(stateRoot);
         _registeredContactStore = new InvitationContactStore(Path.Combine(_stateRoot, "registered-internet-contacts.dat"));
+        _namedTunnelInvitationIdentityStore = new NamedTunnelInvitationIdentityStore(Path.Combine(_stateRoot, "named-tunnel-invitation.dat"));
         InitializeComponent();
         DataContext = this;
         ShowPage("Send");
@@ -186,7 +190,7 @@ public partial class SharingView : UserControl, IAsyncDisposable
             DeviceName = name,
             ReceiveDirectory = directory,
             StateDirectory = _stateRoot,
-            HttpsPort = TransferServer.LocalSendDefaultPort,
+            HttpsPort = _localSendHttpsPort,
             SignalPort = preferences.UseNamedTunnel ? preferences.NamedTunnelPort : 0,
             LocalSendReceivePin = string.IsNullOrEmpty(receivePin) ? null : receivePin,
             EnableTurnRelay = preferences.EnableTurnRelay,
@@ -577,21 +581,57 @@ public partial class SharingView : UserControl, IAsyncDisposable
         await CreateLinkAsync(false, files, ct);
     });
     private async void CreateInvite_Click(object sender, RoutedEventArgs e) => await RunAsync(async ct => { await EnsureStartedAsync(ct); await CreateLinkAsync(true, null, ct); });
+    private async void RotateNamedTunnelInvitation_Click(object sender, RoutedEventArgs e) => await RunAsync(async ct =>
+    {
+        if (!AppPreferencesStore.Load().UseNamedTunnel)
+            throw new InvalidOperationException("先に「設定」でNamed Tunnelの固定ホスト名を設定してください。");
+        if (System.Windows.MessageBox.Show(Window.GetWindow(this),
+                "以前に登録したEZC1コードを無効にし、新しい登録コードを発行します。登録済みの相手には新しいコードを伝えてください。続行しますか？",
+                "インターネット登録コードの更新", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.Yes)
+            return;
+
+        foreach (var link in Links.Where(link => link.StableRegistrationAddress && link.Active).ToArray())
+            await StopLinkAsync(link, "登録コードを更新しました");
+        _namedTunnelInvitationIdentityStore.RotateToken();
+        OnlineCheckBox.IsChecked = true;
+        await EnsureStartedAsync(ct);
+        await CreateLinkAsync(true, null, ct);
+    });
     private async Task CreateLinkAsync(bool invite, List<LocalFile>? files, CancellationToken ct)
     {
         var online = OnlineCheckBox.IsChecked == true;
         if (invite)
         {
+            var preferences = AppPreferencesStore.Load();
+            var stableRegistrationToken = online && preferences.UseNamedTunnel
+                ? _namedTunnelInvitationIdentityStore.LoadOrCreateToken()
+                : null;
+            if (stableRegistrationToken is not null)
+            {
+                var existingInvitation = Links.FirstOrDefault(link => link.Info.IsInvitation &&
+                    string.Equals(link.Info.Token, stableRegistrationToken, StringComparison.Ordinal));
+                if (existingInvitation is { Active: true } && existingInvitation.Info.ExpiresAt > DateTimeOffset.UtcNow)
+                {
+                    StatusText.Text = "固定ホスト名の受け取り招待はすでに有効です。登録済みの相手は同じコードを使えます。";
+                    return;
+                }
+
+                if (existingInvitation is { Active: true }) await StopLinkAsync(existingInvitation, "期限切れ");
+            }
             await EnsureP2PBrowserReadyAsync(ct);
             await EnsureStartedAsync(ct);
             var origin = online ? await StartOnlineTunnelAsync(ct) : null;
             ct.ThrowIfCancellationRequested();
-            var info = _server!.CreateInvitation(LinkLifetime());
+            var info = stableRegistrationToken is null
+                ? _server!.CreateInvitation(LinkLifetime())
+                : _server!.CreateInvitation(LinkLifetime(), stableRegistrationToken);
             var url = online ? new Uri(origin!, "/i/" + info.Token).ToString() : _server.PeerLink(info, AddressCombo.SelectedItem?.ToString());
-            var link = new LinkRow(info, url, online, OnlineTunnelProvider.Cloudflare);
+            var link = new LinkRow(info, url, online, OnlineTunnelProvider.Cloudflare, stableRegistrationToken is not null);
             try { OpenPeerWindow(info, link); Links.Insert(0, link); }
             catch { _server.RevokeLink(info.Token); if (!HasActiveOnlinePeerLink()) await _tunnel.StopAsync(); throw; }
-            StatusText.Text = "受け取り用URLを相手に渡してください。受信のたびにこのPCで確認できます。";
+            StatusText.Text = stableRegistrationToken is null
+                ? "受け取り用URLを相手に渡してください。受信のたびにこのPCで確認できます。"
+                : "固定ホスト名の受け取り招待を開始しました。登録済みの相手は招待を再作成した後も同じコードで接続できます。受信のたびにこのPCで確認してください。";
             return;
         }
 
@@ -691,7 +731,9 @@ public partial class SharingView : UserControl, IAsyncDisposable
         try
         {
             System.Windows.Clipboard.SetText(code);
-            StatusText.Text = "インターネット登録コードをコピーしました。相手に渡して登録してもらってください。招待を停止するとコードも無効になります。";
+            StatusText.Text = link.StableRegistrationAddress
+                ? "固定ホスト名用のインターネット登録コードをコピーしました。同じNamed Tunnel設定で招待を再作成すると、登録済みの相手はこのコードを引き続き使えます。"
+                : "インターネット登録コードをコピーしました。相手に渡して登録してもらってください。受信側アプリを終了すると新しいコードが必要です。";
         }
         catch (System.Runtime.InteropServices.COMException)
         {
@@ -767,18 +809,31 @@ public partial class SharingView : UserControl, IAsyncDisposable
     public sealed record IncomingRow(IncomingTransfer Transfer)
     { public string Summary => $"{Transfer.Sender} · {Transfer.Files.Count}件 · {TransferFiles.Size(Transfer.TotalBytes)}"; public string FileNames => string.Join("\n", Transfer.Files.Take(6).Select(f => f.RelativePath)) + (Transfer.Files.Count > 6 ? "\n…" : ""); }
     public abstract class NotifyRow : INotifyPropertyChanged { public event PropertyChangedEventHandler? PropertyChanged; protected void Changed() => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null)); }
-    public sealed class LinkRow(LinkInfo info, string url, bool online, OnlineTunnelProvider provider) : NotifyRow
+    public sealed class LinkRow(LinkInfo info, string url, bool online, OnlineTunnelProvider provider, bool stableRegistrationAddress = false) : NotifyRow
     {
         private readonly HashSet<string> _receivedFiles = new(StringComparer.OrdinalIgnoreCase);
         public LinkInfo Info { get; } = info;
         public string Url { get; } = url;
         public bool Online { get; } = online;
         public OnlineTunnelProvider Provider { get; } = provider;
+        public bool StableRegistrationAddress { get; } = stableRegistrationAddress && online && info.IsInvitation;
         public bool Active { get; private set; } = true;
         public bool CanRegister => Active && Online && Info.IsInvitation;
         private string? _stopped;
         public string Caption => $"{(Info.IsInvitation ? "受け取り用URL" : $"{Info.FileCount}件のファイルを共有")} · {(Online ? $"インターネット / {Provider}" : "同じネットワーク")}";
-        private string AccessStatus => $"{(Info.ExpiresAt == DateTimeOffset.MaxValue ? "有効: 停止ボタン／アプリ・PC終了まで" : $"期限: {Info.ExpiresAt.LocalDateTime:g}")} · {(Info.PasswordRequired ? "6桁PIN保護" : "URLを知っている相手が受け取れます")}";
+        private string AccessStatus
+        {
+            get
+            {
+                var lifetime = Info.ExpiresAt == DateTimeOffset.MaxValue
+                    ? "有効: 停止ボタン／アプリ・PC終了まで"
+                    : $"期限: {Info.ExpiresAt.LocalDateTime:g}";
+                var access = StableRegistrationAddress
+                    ? "登録コードは固定ホスト名で再利用可"
+                    : Info.PasswordRequired ? "6桁PIN保護" : "URLを知っている相手が受け取れます";
+                return $"{lifetime} · {access}";
+            }
+        }
         private string? _peerActivity;
         public string Status => _stopped ?? string.Join(" · ", new[] { _peerActivity, AccessStatus }.Where(value => !string.IsNullOrWhiteSpace(value)));
         public void UpdatePeerStatus(PeerSessionStatus status)

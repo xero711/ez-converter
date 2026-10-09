@@ -8,6 +8,7 @@
     <Compile Include="..\..\Services\AppPreferencesStore.cs" Link="AppPreferencesStore.cs" />
     <Compile Include="..\..\Services\InvitationCodeService.cs" Link="InvitationCodeService.cs" />
     <Compile Include="..\..\Services\InvitationContactStore.cs" Link="InvitationContactStore.cs" />
+    <Compile Include="..\..\Services\NamedTunnelInvitationIdentityStore.cs" Link="NamedTunnelInvitationIdentityStore.cs" />
     <Compile Remove="work\**\*.cs" />
   </ItemGroup>
 </Project>
