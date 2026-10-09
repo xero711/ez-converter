@@ -68,6 +68,21 @@ try
         var converted = await ConvertAsync(service, imagePath, extension, Path.Combine(workRoot, "images"), imageTools);
         Require(new FileInfo(converted).Length > 0, $"PNG -> {extension.ToUpperInvariant()} produced data");
     }
+    var imageMap = await ConvertAsync(service, imagePath, "map", Path.Combine(workRoot, "map-multicolor-alpha"), imageTools);
+    Require(new FileInfo(imageMap).Length > 1_200, "Multi-color alpha PNG -> MAP has a palette and indexed pixels");
+    Console.WriteLine("PASS: multi-color alpha PNG -> MAP validates its palette and indices.");
+
+    var mapBoundaryPath = Path.Combine(workRoot, "image 257 colors.ppm");
+    var mapBoundaryPixels = string.Join(' ', Enumerable.Range(0, 257).Select(index => $"{index % 256} {index / 256} 0"));
+    await File.WriteAllTextAsync(mapBoundaryPath, $"P3\n257 1\n255\n{mapBoundaryPixels}\n", new System.Text.UTF8Encoding(false));
+    var mapBoundaryColors = await ExternalToolRunner.RunAsync(imageMagick,
+        ["identify", "-format", "%k", mapBoundaryPath], CancellationToken.None, workRoot);
+    Require(mapBoundaryColors.ExitCode == 0 && mapBoundaryColors.StandardOutput == "257",
+        "MAP boundary fixture contains exactly 257 distinct colors");
+    var mapBoundaryOutput = await ConvertAsync(service, mapBoundaryPath, "map", Path.Combine(workRoot, "map-257-colors"), imageTools);
+    Require(new FileInfo(mapBoundaryOutput).Length > 257,
+        "257-color input produces a MAP palette and complete indexed-pixel payload");
+    Console.WriteLine("PASS: 257-color PPM -> MAP validates palette size and pixel indices.");
 
     var htmlPath = Path.Combine(workRoot, "文書 source.html");
     await File.WriteAllTextAsync(htmlPath,

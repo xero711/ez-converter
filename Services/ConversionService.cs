@@ -100,7 +100,7 @@ public sealed class ConversionService
             : outputPath;
         var arguments = new List<string> { inputPath };
         if (extension.Equals(".map", StringComparison.OrdinalIgnoreCase))
-            arguments.AddRange(["-depth", "8", "-colors", "65536"]);
+            arguments.AddRange(["-depth", "8"]);
         else if (extension.Equals(".psd", StringComparison.OrdinalIgnoreCase))
             arguments.AddRange(["-type", "TrueColorAlpha"]);
         arguments.Add(xbmOutputPath);
@@ -502,47 +502,71 @@ public sealed class ConversionService
 
         var pixels = width * height;
         await using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
-        var paletteEntries = (int)Math.Min(sourceColors, 65_536);
-        var indexBytes = paletteEntries > 256 ? 2 : 1;
-        var paletteBytes = (long)paletteEntries * 3;
-        var expectedLength = pixels * indexBytes + paletteBytes;
-        if (stream.Length != expectedLength)
-            throw new ConversionException("MAP出力のパレット数、ピクセル数、またはインデックス幅が不正です。");
+        var maximumPaletteEntries = (int)Math.Min(sourceColors, 65_536);
+        var candidates = new List<(int PaletteEntries, int IndexBytes, long PaletteBytes)>();
 
-        stream.Position = paletteBytes;
+        if (stream.Length >= pixels)
+        {
+            var paletteBytes = stream.Length - pixels;
+            if (paletteBytes % 3 == 0)
+            {
+                var paletteEntries = paletteBytes / 3;
+                if (paletteEntries is > 0 and <= 256 && paletteEntries <= maximumPaletteEntries)
+                    candidates.Add(((int)paletteEntries, 1, paletteBytes));
+            }
+        }
+
+        if (pixels <= long.MaxValue / 2 && stream.Length >= pixels * 2)
+        {
+            var paletteBytes = stream.Length - pixels * 2;
+            if (paletteBytes % 6 == 0)
+            {
+                var paletteEntries = paletteBytes / 6;
+                if (paletteEntries is > 256 and <= 65_536 && paletteEntries <= maximumPaletteEntries)
+                    candidates.Add(((int)paletteEntries, 2, paletteBytes));
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            stream.Position = candidate.PaletteBytes;
+            if (await ValidateMapPixelIndexesAsync(stream, candidate.PaletteEntries, candidate.IndexBytes, cancellationToken))
+                return;
+        }
+
+        throw new ConversionException($"MAP出力のパレットまたはピクセル索引が不正です。実測 {stream.Length} bytes、画像 {width}×{height} pixels、入力色数 {sourceColors}。");
+    }
+
+    private static async Task<bool> ValidateMapPixelIndexesAsync(
+        FileStream stream, int paletteEntries, int indexBytes, CancellationToken cancellationToken)
+    {
         var buffer = new byte[64 * 1024];
         if (indexBytes == 1)
         {
             while (true)
             {
                 var count = await stream.ReadAsync(buffer, cancellationToken);
-                if (count == 0) break;
+                if (count == 0) return true;
                 for (var index = 0; index < count; index++)
-                    if (buffer[index] >= paletteEntries) throw new ConversionException("MAP出力にパレット範囲外のピクセル値があります。");
+                    if (buffer[index] >= paletteEntries) return false;
             }
-            return;
         }
 
-        var bigEndianValid = true;
-        var littleEndianValid = true;
         var pending = -1;
         while (true)
         {
             var count = await stream.ReadAsync(buffer, cancellationToken);
-            if (count == 0) break;
+            if (count == 0) return pending < 0;
             for (var index = 0; index < count; index++)
             {
                 if (pending < 0) pending = buffer[index];
                 else
                 {
-                    bigEndianValid &= (pending << 8 | buffer[index]) < paletteEntries;
-                    littleEndianValid &= (buffer[index] << 8 | pending) < paletteEntries;
+                    if ((pending << 8 | buffer[index]) >= paletteEntries) return false;
                     pending = -1;
                 }
             }
         }
-        if (pending >= 0 || !bigEndianValid && !littleEndianValid)
-            throw new ConversionException("MAP出力にパレット範囲外の16ビットピクセル値があります。");
     }
 
     private static async Task ValidateSixelOutputAsync(string outputPath, CancellationToken cancellationToken)
