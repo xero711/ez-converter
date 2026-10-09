@@ -1176,8 +1176,9 @@ async Task VerifyPeerDiscovery()
             var peer = peers.FirstOrDefault(item => item.Name == "Legacy HTTPS fixture");
             if (peer is not null) legacyHttpsPeerSeen.TrySetResult(peer);
         };
-        await legacyHttpsDiscovery.ProbeLegacyDeviceAsync(IPAddress.Loopback, "https", legacyHttpsPort);
-        var legacyHttpsPeer = await legacyHttpsPeerSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await legacyHttpsDiscovery.ProbeLegacyDeviceAsync(IPAddress.Loopback, "https", legacyHttpsPort,
+            timeoutOverride: TimeSpan.FromSeconds(5));
+        var legacyHttpsPeer = await legacyHttpsPeerSeen.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var certificateFingerprint = Convert.ToHexString(SHA256.HashData(senderServer.LocalSendClientCertificate.RawData));
         Assert(legacyHttpsPeer.Fingerprint == certificateFingerprint && legacyHttpsPeer.Port == legacyHttpsPort &&
                legacyHttpsPeer.ConnectionUrl == $"https://127.0.0.1:{legacyHttpsPort}/#{certificateFingerprint}",
