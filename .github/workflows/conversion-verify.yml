@@ -3,13 +3,14 @@ name: Verify file conversions
 on:
   push:
     branches:
-      - '**'
+      - main
     paths:
       - 'MediaConverter.csproj'
       - 'MainWindow.xaml'
       - 'MainWindow.xaml.cs'
       - 'Models/**'
       - 'Services/**'
+      - 'Views/**'
       - 'Sharing/**'
       - 'Compression/**'
       - 'tests/Conversion.Matrix/**'
@@ -25,6 +26,7 @@ on:
       - 'MainWindow.xaml.cs'
       - 'Models/**'
       - 'Services/**'
+      - 'Views/**'
       - 'Sharing/**'
       - 'Compression/**'
       - 'tests/Conversion.Matrix/**'
