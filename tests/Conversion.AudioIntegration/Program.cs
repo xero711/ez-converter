@@ -1,12 +1,22 @@
 using MediaConverter.Models;
 using MediaConverter.Services;
 
-var ffmpeg = ToolLocator.FindFfmpeg()
-    ?? throw new InvalidOperationException("FFmpeg が見つかりません。アプリのFFmpeg更新を済ませてから再実行してください。");
 var root = Path.Combine(Path.GetTempPath(), "EZConverter-AudioIntegration-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {
+    var ffmpeg = ToolLocator.FindFfmpeg();
+    if (ffmpeg is null)
+    {
+        var updater = new FfmpegUpdateService(Path.Combine(root, "managed-tools"));
+        _ = await updater.UpdateIfNeededAsync(force: true);
+        ffmpeg = updater.ExecutablePath;
+    }
+    if (!File.Exists(ffmpeg))
+    {
+        throw new FileNotFoundException("FFmpeg could not be prepared for the audio conversion integration check.");
+    }
+
     var videoPath = Path.Combine(root, "video-with-audio.mp4");
     var fixture = await ExternalToolRunner.RunAsync(ffmpeg,
         ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=160x120:rate=24",

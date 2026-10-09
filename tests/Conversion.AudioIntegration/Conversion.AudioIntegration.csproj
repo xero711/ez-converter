@@ -16,6 +16,7 @@
     <Compile Include="..\..\Models\MediaKind.cs" Link="Models\MediaKind.cs" />
     <Compile Include="..\..\Services\ConversionService.cs" Link="Services\ConversionService.cs" />
     <Compile Include="..\..\Services\ExternalToolRunner.cs" Link="Services\ExternalToolRunner.cs" />
+    <Compile Include="..\..\Services\FfmpegUpdateService.cs" Link="Services\FfmpegUpdateService.cs" />
     <Compile Include="..\..\Services\PdfTextConversionService.cs" Link="Services\PdfTextConversionService.cs" />
     <Compile Include="..\..\Services\ToolLocator.cs" Link="Services\ToolLocator.cs" />
   </ItemGroup>
