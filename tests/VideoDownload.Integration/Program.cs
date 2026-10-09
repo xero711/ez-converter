@@ -109,7 +109,7 @@ try
     {
         Require((bool)(urlValidator.Invoke(null, [candidate]) ?? false), $"supported HTTP(S) URL form is accepted: {candidate}");
         var candidateArguments = (IReadOnlyList<string>?)builder.Invoke(null,
-            [candidate, outputDirectory, "mp4", "最高品質", false, ffmpeg])
+            [candidate, outputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
             ?? throw new InvalidOperationException("A URL form did not produce yt-dlp arguments.");
         Require(candidateArguments.Last() == candidate, $"URL form is passed intact to yt-dlp: {candidate}");
     }
@@ -125,7 +125,7 @@ try
     }
     Pass("watch, short, embed, Vimeo, HLS, DASH, and signed media URL forms are validated and preserved; unsupported schemes and embedded credentials are rejected");
 
-    var arguments = (IReadOnlyList<string>?)builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "最高品質", false, ffmpeg])
+    var arguments = (IReadOnlyList<string>?)builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
         ?? throw new InvalidOperationException("The URL download arguments were not created.");
     Require(arguments.Last() == signedUrl, "signed direct-media query is preserved as one URL argument");
     Require(arguments.Contains("--ignore-config", StringComparer.Ordinal) && arguments.Contains("--no-playlist", StringComparer.Ordinal),
@@ -148,7 +148,7 @@ try
     var hlsOutputDirectory = Path.Combine(root, "hls-output");
     Directory.CreateDirectory(hlsOutputDirectory);
     var hlsArguments = (IReadOnlyList<string>?)builder.Invoke(null,
-        [hlsUrl, hlsOutputDirectory, "mp4", "最高品質", false, ffmpeg])
+        [hlsUrl, hlsOutputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
         ?? throw new InvalidOperationException("HLS URL arguments were not created.");
     Require(hlsArguments.Last() == hlsUrl, "signed HLS URL is passed intact to yt-dlp");
     var hlsResult = await ExternalToolRunner.RunAsync(ytDlp, hlsArguments, deadline.Token, hlsOutputDirectory);

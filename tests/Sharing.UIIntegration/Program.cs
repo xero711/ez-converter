@@ -1,10 +1,13 @@
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using MediaConverter;
 using MediaConverter.Services;
 using MediaConverter.Views;
@@ -44,6 +47,7 @@ internal static class Program
                 VerifyOnlineTunnelRetentionPolicy();
                 VerifyPeerDiscoveryStatus();
                 VerifyMediaUrlHandling(fixtureDirectory);
+                await VerifyVideoPageProbeAsync(window);
                 Directory.CreateDirectory(fixtureDirectory);
                 var fixture = RandomNumberGenerator.GetBytes(131_173);
                 var fixturePath = Path.Combine(fixtureDirectory, "ui-share-smoke.bin");
@@ -639,13 +643,115 @@ internal static class Program
         var builder = typeof(MainWindow).GetMethod("BuildMediaArguments", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             ?? throw new InvalidOperationException("The video download argument builder is missing.");
         var signedUrl = "https://cdn.example/video/123?signature=abc&expires=321";
-        var arguments = builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "720p", false, "ffmpeg.exe"]) as IReadOnlyList<string>
+        const string referer = "https://video.example/watch/123";
+        const string userAgent = "EZConverter UI integration test";
+        var arguments = builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "720p", false, "ffmpeg.exe", referer, userAgent]) as IReadOnlyList<string>
             ?? throw new InvalidOperationException("The video download argument builder returned an unexpected result.");
         if (!arguments.Contains("--ignore-config", StringComparer.Ordinal) || !arguments.Contains("--no-playlist", StringComparer.Ordinal) ||
-            !arguments.Contains(signedUrl, StringComparer.Ordinal))
-            throw new InvalidOperationException("yt-dlp arguments must isolate user configuration and preserve signed media URLs without expanding playlists.");
+            !arguments.Contains(signedUrl, StringComparer.Ordinal) ||
+            !arguments.Contains("--referer", StringComparer.Ordinal) || !arguments.Contains(referer, StringComparer.Ordinal) ||
+            !arguments.Contains("--user-agent", StringComparer.Ordinal) || !arguments.Contains(userAgent, StringComparer.Ordinal))
+            throw new InvalidOperationException("yt-dlp arguments must preserve the signed media URL and safely pass its page referer and browser user agent.");
         Console.WriteLine("PASS video URL input accepts varied HTTP/HTTPS hosts and signed query URLs while rejecting credentials and unsupported schemes");
-        Console.WriteLine("PASS yt-dlp arguments preserve signed URLs and isolate downloads from external configuration");
+        Console.WriteLine("PASS yt-dlp arguments preserve signed URLs, isolate external configuration, and pass page referer/user agent");
+    }
+
+    private static async Task VerifyVideoPageProbeAsync(Window owner)
+    {
+        using var portReservation = new TcpListener(System.Net.IPAddress.Loopback, 0);
+        portReservation.Start();
+        var port = ((System.Net.IPEndPoint)portReservation.LocalEndpoint).Port;
+        portReservation.Stop();
+
+        var origin = new Uri($"http://127.0.0.1:{port}/");
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add(origin.AbsoluteUri);
+        listener.Start();
+        using var stopServer = new CancellationTokenSource();
+        var serverTask = Task.Run(async () =>
+        {
+            while (!stopServer.IsCancellationRequested)
+            {
+                System.Net.HttpListenerContext context;
+                try { context = await listener.GetContextAsync(); }
+                catch (System.Net.HttpListenerException) { return; }
+                catch (ObjectDisposedException) { return; }
+
+                var isPage = context.Request.Url?.AbsolutePath == "/watch";
+                var bytes = isPage
+                    ? Encoding.UTF8.GetBytes("<!doctype html><html><body><video controls src='/clip.mp4?signature=fixture'></video></body></html>")
+                    : [0, 0, 0, 0];
+                context.Response.StatusCode = isPage || context.Request.Url?.AbsolutePath == "/clip.mp4"
+                    ? (int)System.Net.HttpStatusCode.OK
+                    : (int)System.Net.HttpStatusCode.NotFound;
+                context.Response.ContentType = isPage ? "text/html; charset=utf-8" : "video/mp4";
+                context.Response.ContentLength64 = bytes.Length;
+                try { await context.Response.OutputStream.WriteAsync(bytes); }
+                catch (System.Net.HttpListenerException) { }
+                finally { context.Response.Close(); }
+            }
+        });
+
+        var pageUrl = new Uri(origin, "watch").AbsoluteUri;
+        var expectedMediaUrl = new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri;
+        var probe = new VideoPageProbeWindow(pageUrl)
+        {
+            Owner = owner,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = owner.Left + 32,
+            Top = owner.Top + 32
+        };
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(12);
+        DateTime? detectedAt = null;
+        var timedOut = false;
+        var selectionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        selectionTimer.Tick += (_, _) =>
+        {
+            var candidate = probe.MediaCandidates.FirstOrDefault(media => media.Url == expectedMediaUrl);
+            if (candidate is not null)
+            {
+                detectedAt ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - detectedAt.Value >= TimeSpan.FromMilliseconds(750) &&
+                    probe.FindName("MediaList") is ListBox list &&
+                    probe.FindName("SaveMediaButton") is Button saveButton)
+                {
+                    list.SelectedItem = candidate;
+                    saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    selectionTimer.Stop();
+                }
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                timedOut = true;
+                selectionTimer.Stop();
+                probe.Close();
+            }
+        };
+
+        selectionTimer.Start();
+        try
+        {
+            _ = probe.ShowDialog();
+            if (timedOut)
+                throw new TimeoutException("The isolated WebView2 did not detect and select the public synthetic MP4 URL.");
+
+            var selected = probe.SelectedMedia
+                ?? throw new InvalidOperationException("The WebView2 candidate selection did not return a media URL.");
+            if (selected.Url != expectedMediaUrl || selected.Kind != "動画ファイル" || selected.PageUrl != pageUrl ||
+                string.IsNullOrWhiteSpace(selected.UserAgent))
+                throw new InvalidDataException("The WebView2 candidate did not preserve its signed URL, page referer, media kind, and browser user agent.");
+            Console.WriteLine("PASS isolated WebView2 discovers and selects a signed synthetic MP4 URL with its page and user agent");
+        }
+        finally
+        {
+            selectionTimer.Stop();
+            stopServer.Cancel();
+            listener.Stop();
+            try { await serverTask.WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch (TimeoutException) { }
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)

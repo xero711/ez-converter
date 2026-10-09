@@ -3,14 +3,11 @@ using System.IO;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using Button = System.Windows.Controls.Button;
 using ListBox = System.Windows.Controls.ListBox;
-using WpfBrushes = System.Windows.Media.Brushes;
-using WpfColor = System.Windows.Media.Color;
 
 namespace MediaConverter.Views;
 
@@ -24,7 +21,7 @@ public sealed record DetectedPageMedia(string Url, string Kind, string PageUrl, 
 /// HTTP(S) video manifests or files requested by its player. Browser cookies are
 /// never copied to the downloader.
 /// </summary>
-public sealed class VideoPageProbeWindow : Window
+public sealed partial class VideoPageProbeWindow : Window
 {
     private const int MaximumCandidates = 32;
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMilliseconds(1200);
@@ -44,6 +41,7 @@ public sealed class VideoPageProbeWindow : Window
     private string _userAgent = string.Empty;
 
     public DetectedPageMedia? SelectedMedia { get; private set; }
+    public ObservableCollection<DetectedPageMedia> MediaCandidates => _media;
 
     public VideoPageProbeWindow(string pageUrl)
     {
@@ -53,104 +51,17 @@ public sealed class VideoPageProbeWindow : Window
         }
 
         _pageUri = pageUri;
-
+        InitializeComponent();
         _userDataFolder = Path.Combine(Path.GetTempPath(), "EZConverter", "VideoProbe-" + Guid.NewGuid().ToString("N"));
-        _browser = new WebView2
+        _browser = BrowserControl;
+        _status = StatusText;
+        _mediaList = MediaList;
+        _saveButton = SaveMediaButton;
+        DataContext = this;
+        _browser.CreationProperties = new CoreWebView2CreationProperties
         {
-            CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = _userDataFolder }
+            UserDataFolder = _userDataFolder
         };
-        _status = new TextBlock
-        {
-            Text = "ページを開いています。プレイヤーを再生すると動画を検出できる場合があります。",
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10),
-            Foreground = WpfBrushes.DimGray
-        };
-        _mediaList = new ListBox
-        {
-            ItemsSource = _media,
-            DisplayMemberPath = nameof(DetectedPageMedia.DisplayName),
-            MinHeight = 76,
-            MaxHeight = 150,
-            Margin = new Thickness(0, 8, 0, 0)
-        };
-        _saveButton = new Button
-        {
-            Content = "選択した動画を保存",
-            IsEnabled = false,
-            MinWidth = 170,
-            Padding = new Thickness(14, 7, 14, 7),
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-
-        Title = "ページ内動画の検出";
-        Width = 1000;
-        Height = 760;
-        MinWidth = 700;
-        MinHeight = 540;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = WpfBrushes.White;
-
-        var root = new Grid { Margin = new Thickness(16) };
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.Children.Add(_status);
-
-        var browserBorder = new Border
-        {
-            BorderBrush = new SolidColorBrush(WpfColor.FromRgb(215, 220, 227)),
-            BorderThickness = new Thickness(1),
-            Child = _browser
-        };
-        Grid.SetRow(browserBorder, 1);
-        root.Children.Add(browserBorder);
-
-        var sourcePanel = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-        sourcePanel.Children.Add(new TextBlock
-        {
-            Text = "検出した動画",
-            FontWeight = FontWeights.SemiBold
-        });
-        sourcePanel.Children.Add(_mediaList);
-        Grid.SetRow(sourcePanel, 2);
-        root.Children.Add(sourcePanel);
-
-        var footer = new DockPanel { Margin = new Thickness(0, 12, 0, 0), LastChildFill = false };
-        var note = new TextBlock
-        {
-            Text = "ログインや購入が必要な動画、DRM保護された動画は対象外です。検出した公開動画のURLだけを使用し、ブラウザーのCookieは保存処理へ渡しません。",
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center,
-            Foreground = WpfBrushes.DimGray,
-            MaxWidth = 570
-        };
-        DockPanel.SetDock(note, Dock.Left);
-        footer.Children.Add(note);
-
-        var buttons = new StackPanel
-        {
-            Orientation = System.Windows.Controls.Orientation.Horizontal,
-            HorizontalAlignment = System.Windows.HorizontalAlignment.Right
-        };
-        _saveButton.Click += SaveSelectedMedia;
-        buttons.Children.Add(_saveButton);
-        var closeButton = new Button
-        {
-            Content = "閉じる",
-            MinWidth = 88,
-            Padding = new Thickness(12, 7, 12, 7),
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-        closeButton.Click += (_, _) => Close();
-        buttons.Children.Add(closeButton);
-        DockPanel.SetDock(buttons, Dock.Right);
-        footer.Children.Add(buttons);
-        Grid.SetRow(footer, 3);
-        root.Children.Add(footer);
-
-        Content = root;
         _scanTimer = new DispatcherTimer { Interval = ScanInterval };
         _scanTimer.Tick += ScanTimer_Tick;
         Loaded += InitializeBrowser;
@@ -297,8 +208,12 @@ public sealed class VideoPageProbeWindow : Window
             _mediaList.SelectedItem = candidate;
         }
 
-        _saveButton.IsEnabled = _mediaList.SelectedItem is DetectedPageMedia;
         _status.Text = $"動画候補を{_media.Count}件検出しました。保存する動画を選んでください。";
+    }
+
+    private void MediaList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        _saveButton.IsEnabled = _mediaList.SelectedItem is DetectedPageMedia;
     }
 
     private static string? ClassifyMedia(Uri uri, string? contentType)
@@ -352,6 +267,8 @@ public sealed class VideoPageProbeWindow : Window
         DialogResult = true;
         Close();
     }
+
+    private void CloseWindow_Click(object sender, RoutedEventArgs e) => Close();
 
     private void OnClosed(object? sender, EventArgs e)
     {
