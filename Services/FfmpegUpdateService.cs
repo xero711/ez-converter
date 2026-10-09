@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
@@ -19,6 +20,7 @@ public sealed class FfmpegUpdateService
     private const string VersionFileName = "release-version";
     private const string HashFileName = ArchiveName + ".sha256";
     private static readonly TimeSpan CheckInterval = TimeSpan.FromHours(12);
+    private const int ArchiveDownloadAttempts = 3;
     private static readonly HttpClient MetadataClient = new() { Timeout = TimeSpan.FromSeconds(20) };
     private static readonly HttpClient DownloadClient = new() { Timeout = TimeSpan.FromMinutes(5) };
     private static readonly SemaphoreSlim UpdateLock = new(1, 1);
@@ -82,19 +84,8 @@ public sealed class FfmpegUpdateService
             var stagingDirectory = Path.Combine(_toolsDirectory, $"ffmpeg-staging-{Guid.NewGuid():N}");
             try
             {
-                using (var response = await DownloadClient.GetAsync(
-                    BuildsBaseUrl + ArchiveName, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-                {
-                    response.EnsureSuccessStatusCode();
-                    if (response.Content.Headers.ContentLength is long length && length is < 1_000_000 or > 500_000_000)
-                    {
-                        throw new InvalidDataException("FFmpegアーカイブのサイズが想定範囲外です。");
-                    }
-
-                    await using var destination = new FileStream(
-                        archivePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true);
-                    await response.Content.CopyToAsync(destination, cancellationToken);
-                }
+                await DownloadArchiveWithRetryAsync(
+                    DownloadClient, new Uri(BuildsBaseUrl + ArchiveName), archivePath, cancellationToken);
 
                 var archiveInfo = new FileInfo(archivePath);
                 if (archiveInfo.Length is < 1_000_000 or > 500_000_000)
@@ -134,6 +125,56 @@ public sealed class FfmpegUpdateService
         {
             UpdateLock.Release();
         }
+    }
+
+    internal static async Task DownloadArchiveWithRetryAsync(
+        HttpClient client,
+        Uri archiveUri,
+        string archivePath,
+        CancellationToken cancellationToken,
+        TimeSpan? retryDelayOverride = null)
+    {
+        for (var attempt = 1; attempt <= ArchiveDownloadAttempts; attempt++)
+        {
+            try
+            {
+                using var response = await client.GetAsync(
+                    archiveUri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                response.EnsureSuccessStatusCode();
+                if (response.Content.Headers.ContentLength is long length && length is < 1_000_000 or > 500_000_000)
+                    throw new InvalidDataException("FFmpegアーカイブのサイズが想定範囲外です。");
+
+                await using var destination = new FileStream(
+                    archivePath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, useAsync: true);
+                await response.Content.CopyToAsync(destination, cancellationToken);
+
+                var downloadedLength = destination.Length;
+                if (downloadedLength is < 1_000_000 or > 500_000_000)
+                    throw new InvalidDataException("ダウンロードしたFFmpegアーカイブのサイズが不正です。");
+                return;
+            }
+            catch (HttpRequestException exception) when (
+                attempt < ArchiveDownloadAttempts && IsTransientArchiveFailure(exception))
+            {
+                TryDeleteFile(archivePath);
+                await Task.Delay(retryDelayOverride ?? TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+            catch (OperationCanceledException) when (
+                attempt < ArchiveDownloadAttempts && !cancellationToken.IsCancellationRequested)
+            {
+                TryDeleteFile(archivePath);
+                await Task.Delay(retryDelayOverride ?? TimeSpan.FromSeconds(attempt), cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransientArchiveFailure(HttpRequestException exception)
+    {
+        if (exception.StatusCode is null) return true;
+        var statusCode = (int)exception.StatusCode.Value;
+        return statusCode is >= 200 and <= 299 ||
+            statusCode is (int)HttpStatusCode.RequestTimeout or (int)HttpStatusCode.TooManyRequests ||
+            statusCode >= 500;
     }
 
     private static async Task ExtractExecutableAsync(
