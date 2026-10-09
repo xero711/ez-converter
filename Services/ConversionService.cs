@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Text;
 using MediaConverter.Models;
 using System.Globalization;
 
@@ -420,7 +421,41 @@ public sealed class ConversionService
         }
         else if (backend == ConversionBackend.ImageMagick && executable is not null)
         {
-            _ = await RunAndRequireSuccessAsync(executable, ["identify", "-regard-warnings", outputPath], cancellationToken, "ImageMagickによる出力検査");
+            if (targetFormat.Extension.Equals("eps", StringComparison.OrdinalIgnoreCase)
+                || targetFormat.Extension.Equals("ps", StringComparison.OrdinalIgnoreCase))
+            {
+                await ValidatePostScriptOutputAsync(outputPath, cancellationToken);
+            }
+            else
+            {
+                _ = await RunAndRequireSuccessAsync(executable, ["identify", "-regard-warnings", outputPath], cancellationToken, "ImageMagickによる出力検査");
+            }
+        }
+    }
+
+    private static async Task ValidatePostScriptOutputAsync(string outputPath, CancellationToken cancellationToken)
+    {
+        const int maxHeaderBytes = 1024 * 1024;
+        const int maxFooterBytes = 8192;
+        await using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 16 * 1024, useAsync: true);
+        var headerLength = (int)Math.Min(stream.Length, maxHeaderBytes);
+        var headerBytes = new byte[headerLength];
+        await stream.ReadExactlyAsync(headerBytes, cancellationToken);
+        var header = Encoding.Latin1.GetString(headerBytes);
+        if (!header.StartsWith("%!PS-Adobe-", StringComparison.Ordinal)
+            || !header.Contains("%%BoundingBox:", StringComparison.Ordinal))
+        {
+            throw new ConversionException("PostScript出力のヘッダーまたはBoundingBoxを確認できませんでした。");
+        }
+
+        var footerLength = (int)Math.Min(stream.Length, maxFooterBytes);
+        stream.Position = stream.Length - footerLength;
+        var footerBytes = new byte[footerLength];
+        await stream.ReadExactlyAsync(footerBytes, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Encoding.Latin1.GetString(footerBytes).Contains("%%EOF", StringComparison.Ordinal))
+        {
+            throw new ConversionException("PostScript出力の終端マーカーを確認できませんでした。");
         }
     }
 

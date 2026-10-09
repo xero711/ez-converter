@@ -32,6 +32,10 @@ try
 
     var imageMagick = FindTool(repositoryRoot, [@"Tools\ImageMagick\magick.exe"]) ?? ToolLocator.FindImageMagick()
         ?? throw new InvalidOperationException("ImageMagick is required for the bundled-format conversion matrix.");
+    var ffmpeg = FindTool(repositoryRoot, [@"Tools\FFmpeg\bin\ffmpeg.exe"]) ?? ToolLocator.FindFfmpeg()
+        ?? throw new InvalidOperationException("FFmpeg is required for the bundled-format conversion matrix.");
+    var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
+    if (!File.Exists(ffprobe)) throw new FileNotFoundException("ffprobe is required to inspect converted video fixtures.", ffprobe);
     var sevenZip = FindTool(repositoryRoot, [@"Tools\7-Zip\7z.exe"]) ?? ToolLocator.FindSevenZip()
         ?? throw new InvalidOperationException("7-Zip is required for the bundled-format conversion matrix.");
     var libreOffice = FindTool(repositoryRoot, [@"Tools\LibreOffice\program\soffice.com", @"Tools\LibreOffice\program\soffice.exe"])
@@ -66,6 +70,19 @@ try
     var extractedText = await ConvertAsync(service, pdfPath, "txt", Path.Combine(workRoot, "documents"), new Dictionary<ConversionBackend, string?>());
     Require((await File.ReadAllTextAsync(extractedText)).Contains("変換試験", StringComparison.Ordinal), "HTML -> DOCX -> PDF -> TXT preserves Japanese text");
 
+    var imageOnlyHtml = Path.Combine(workRoot, "image-only.html");
+    await File.WriteAllTextAsync(imageOnlyHtml,
+        "<!doctype html><html><body><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"48\"><rect width=\"64\" height=\"48\" fill=\"#f05a70\"/></svg></body></html>",
+        new System.Text.UTF8Encoding(false));
+    var imageOnlyPdf = await ConvertAsync(service, imageOnlyHtml, "pdf", Path.Combine(workRoot, "image-only-pdf"), officeTools);
+    var noOcrOutput = Path.Combine(workRoot, "image-only-pdf-text");
+    var imageOnlyRejected = false;
+    try { _ = await ConvertAsync(service, imageOnlyPdf, "txt", noOcrOutput, new Dictionary<ConversionBackend, string?>()); }
+    catch (ConversionException exception) when (exception.Message.Contains("抽出できる文字がありません", StringComparison.Ordinal))
+    { imageOnlyRejected = true; }
+    Require(imageOnlyRejected, "Image-only PDF is rejected clearly when OCR is unavailable");
+    Require(!Directory.EnumerateFileSystemEntries(noOcrOutput).Any(), "Rejected image-only PDF leaves no partial TXT or staging output");
+
     var spreadsheetPath = Path.Combine(workRoot, "table.xlsx");
     using (var workbook = new XLWorkbook())
     {
@@ -89,6 +106,51 @@ try
     {
         var converted = await ConvertAsync(service, archivePath, extension, Path.Combine(workRoot, "archives"), archiveTools);
         Require(new FileInfo(converted).Length > 0, $"ZIP -> {extension.ToUpperInvariant()} produced a readable archive");
+    }
+
+    var sourceTar = Path.Combine(workRoot, "source.tar");
+    await RequireSuccessAsync(sevenZip, ["a", "-ttar", sourceTar, ".", "-y"], archiveSourceDirectory, "TAR fixture");
+    var sourceTarGz = Path.Combine(workRoot, "source.tar.gz");
+    await RequireSuccessAsync(sevenZip, ["a", "-tgzip", sourceTarGz, sourceTar, "-y"], workRoot, "TAR.GZ fixture");
+    var tarGzOutput = await ConvertAsync(service, sourceTarGz, "zip", Path.Combine(workRoot, "tar-gz-archives"), archiveTools);
+    var tarGzExtracted = Path.Combine(workRoot, "tar-gz-extracted");
+    Directory.CreateDirectory(tarGzExtracted);
+    await RequireSuccessAsync(sevenZip, ["x", tarGzOutput, $"-o{tarGzExtracted}", "-y"], workRoot, "TAR.GZ -> ZIP content check");
+    Require(await File.ReadAllTextAsync(Path.Combine(tarGzExtracted, "日本語 & sample.txt")) == "archive fixture",
+        "TAR.GZ -> ZIP preserves the Japanese file name and contents");
+
+    var videoPath = Path.Combine(workRoot, "video source.mp4");
+    await RequireSuccessAsync(ffmpeg,
+        ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=24",
+         "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000", "-t", "1", "-c:v", "libx264",
+         "-pix_fmt", "yuv420p", "-c:a", "aac", "-y", videoPath], workRoot, "MP4 fixture");
+    var videoTools = new Dictionary<ConversionBackend, string?> { [ConversionBackend.Ffmpeg] = ffmpeg };
+    var threeGpPath = await ConvertAsync(service, videoPath, "3gp", Path.Combine(workRoot, "video-3gp"), videoTools);
+    var threeGpProbe = await ProbeAsync(ffprobe, threeGpPath);
+    Require(threeGpProbe.Contains("3gp", StringComparison.OrdinalIgnoreCase)
+            && threeGpProbe.Contains("h264", StringComparison.OrdinalIgnoreCase)
+            && threeGpProbe.Contains("aac", StringComparison.OrdinalIgnoreCase),
+        "MP4 -> 3GP is readable and contains H.264 video and AAC audio");
+    var xvidPath = await ConvertAsync(service, videoPath, "xvid", Path.Combine(workRoot, "video-xvid"), videoTools);
+    var xvidProbe = await ProbeAsync(ffprobe, xvidPath);
+    Require(xvidProbe.Contains("avi", StringComparison.OrdinalIgnoreCase)
+            && xvidProbe.Contains("mpeg4", StringComparison.OrdinalIgnoreCase)
+            && xvidProbe.Contains("xvid", StringComparison.OrdinalIgnoreCase),
+        "MP4 -> Xvid is readable as AVI with the MPEG-4 codec and XVID tag");
+
+    var svgPath = Path.Combine(workRoot, "vector source.svg");
+    await File.WriteAllTextAsync(svgPath,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"48\"><rect width=\"64\" height=\"48\" fill=\"#f05a70\"/></svg>",
+        new System.Text.UTF8Encoding(false));
+    var vectorTools = new Dictionary<ConversionBackend, string?> { [ConversionBackend.ImageMagick] = imageMagick };
+    foreach (var extension in new[] { "eps", "ps" })
+    {
+        var postScriptPath = await ConvertAsync(service, svgPath, extension, Path.Combine(workRoot, "vectors"), vectorTools);
+        var postScriptText = await File.ReadAllTextAsync(postScriptPath);
+        Require(postScriptText.StartsWith("%!PS-Adobe-", StringComparison.Ordinal)
+                && postScriptText.Contains("%%BoundingBox:", StringComparison.Ordinal)
+                && postScriptText.TrimEnd().EndsWith("%%EOF", StringComparison.Ordinal),
+            $"SVG -> {extension.ToUpperInvariant()} produces a structurally complete PostScript document rather than a renamed raster output");
     }
 
     var ebookSourcePath = Path.Combine(workRoot, "book source.html");
@@ -162,6 +224,15 @@ static async Task RequireSuccessAsync(string executable, IEnumerable<string> arg
 {
     var result = await ExternalToolRunner.RunAsync(executable, arguments, CancellationToken.None, workingDirectory);
     Require(result.ExitCode == 0, $"{description} failed: {result.StandardError}");
+}
+
+static async Task<string> ProbeAsync(string ffprobe, string path)
+{
+    var result = await ExternalToolRunner.RunAsync(ffprobe,
+        ["-v", "error", "-show_entries", "format=format_name:stream=codec_name,codec_tag_string",
+         "-of", "default=noprint_wrappers=1:nokey=1", path], CancellationToken.None);
+    Require(result.ExitCode == 0, "ffprobe could not read converted video: " + result.StandardError);
+    return result.StandardOutput;
 }
 
 static string? FindTool(string repositoryRoot, IEnumerable<string> relativePaths)
