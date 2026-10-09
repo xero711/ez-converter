@@ -32,8 +32,15 @@ try
 
     var imageMagick = FindTool(repositoryRoot, [@"Tools\ImageMagick\magick.exe"]) ?? ToolLocator.FindImageMagick()
         ?? throw new InvalidOperationException("ImageMagick is required for the bundled-format conversion matrix.");
-    var ffmpeg = FindTool(repositoryRoot, [@"Tools\FFmpeg\bin\ffmpeg.exe"]) ?? ToolLocator.FindFfmpeg()
-        ?? throw new InvalidOperationException("FFmpeg is required for the bundled-format conversion matrix.");
+    var ffmpeg = FindTool(repositoryRoot, [@"Tools\FFmpeg\bin\ffmpeg.exe"]) ?? ToolLocator.FindFfmpeg();
+    if (ffmpeg is null)
+    {
+        var ffmpegUpdater = new FfmpegUpdateService(Path.Combine(workRoot, "managed-tools"));
+        _ = await ffmpegUpdater.UpdateIfNeededAsync(force: true);
+        ffmpeg = ffmpegUpdater.ExecutablePath;
+    }
+    if (!File.Exists(ffmpeg))
+        throw new FileNotFoundException("FFmpeg could not be prepared for the bundled-format conversion matrix.", ffmpeg);
     var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
     if (!File.Exists(ffprobe)) throw new FileNotFoundException("ffprobe is required to inspect converted video fixtures.", ffprobe);
     var sevenZip = FindTool(repositoryRoot, [@"Tools\7-Zip\7z.exe"]) ?? ToolLocator.FindSevenZip()
