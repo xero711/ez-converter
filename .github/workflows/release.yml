@@ -11,15 +11,10 @@ permissions:
 jobs:
   release:
     runs-on: windows-2025
-    defaults:
-      run:
-        working-directory: s
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          path: s
 
       - name: Read application version from release tag
         id: release_version

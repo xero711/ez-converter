@@ -125,6 +125,11 @@ function Move-StagedEngine {
         throw "不完全な既存フォルダーがあるため上書きしません: $DestinationPath"
     }
     Move-Item -LiteralPath $StagePath -Destination $DestinationPath
+    $deployedExecutable = Join-Path $DestinationPath $ExecutableRelativePath
+    if (-not (Test-Path -LiteralPath $deployedExecutable -PathType Leaf)) {
+        throw "$Name の配置後に実行ファイルが見つかりません: $deployedExecutable"
+    }
+    Invoke-CheckedProcess -FilePath $deployedExecutable -Arguments $Arguments -Name "$Name の配置後確認"
     Write-Host "$Name を Tools に配置しました。"
 }
 
@@ -248,11 +253,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $libreOfficeDestination $packages.Li
 
 $calibreDestination = Join-Path $toolsRoot 'Calibre'
 if (-not (Test-Path -LiteralPath (Join-Path $calibreDestination $packages.Calibre.Executable) -PathType Leaf)) {
-    $calibrePortableDestination = Join-Path $calibreDestination 'Calibre Portable'
-    if ($calibrePortableDestination.Length -ge 59) {
-        throw "Tools\Calibre の配置先がCalibre Portableの上限（59文字未満）を超えています。短いパスにプロジェクトを配置してください: $calibrePortableDestination"
-    }
-
+    # Install under a short staging path, then verify the executable after moving it into Tools.
     $installer = Join-Path $workRoot $packages.Calibre.FileName
     Get-VerifiedDownload $packages.Calibre.Uri $installer $packages.Calibre.Sha256
     $signature = Get-AuthenticodeSignature -LiteralPath $installer
