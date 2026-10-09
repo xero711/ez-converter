@@ -15,7 +15,7 @@
 | Releaseビルド | 変更後のWPFアプリ本体と共有ライブラリをRelease構成でビルド。 | 0警告・0エラー。 |
 | ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | 削除は未実施。自動レビューが整理操作を拒否したため、空き容量は増えていない。 |
 | 発行サイズ | 発行フォルダーは3,215,746,709 bytes。ZIP高速圧縮を出力ファイルなしで計測した推定サイズは1,434,055,258 bytes（1.336 GiB）。GitHub公式上限2 GiB未満。 | Release workflowに実ZIPサイズの上限検査を追加。 |
-| GitHubリポジトリ | 現在のブランチは`main`。`xero711/ez-converter`はまだ存在せず、ローカル変更は未コミット。自動更新が未認証のGitHub Release APIを使うため、配布時は公開リポジトリが必要。 | リポジトリ作成・push・実更新試験は未実施。別端末相互接続などの受け入れ後に反映する。 |
+| GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | 初回共有CIはGitHub runnerのネットワークアダプター前提で失敗。合成ネットワークアドレスを使う修正後、ローカル共有統合217件が成功し、更新したGitHub Actionsで再実行予定。実GitHub Releaseからの自動更新試験は未実施。
 
 ## 公開共有の制約
 
@@ -29,6 +29,6 @@ WPF共有UI統合試験 (`dotnet run --project tests\Sharing.UIIntegration\Shari
 
 1. 公式LocalSend GUIを別端末で同じLANに接続し、発見・登録・実ファイル送受信を確認する。
 2. 別回線のPC／スマートフォンから、登録コードを使った双方の送受信とSHA-256を確認する。
-3. 公開GitHubリポジトリを作成してソースを反映する。
+3. `v1.0.2`タグから実Releaseを作り、更新アプリが実配布ZIPを検出・ダウンロード・SHA-256検証することを確認する。
 4. 実Releaseを作成し、未更新アプリがそれを検出・検証・適用するところまで確認する。
 5. CloudflareアカウントでNamed Tunnelを作成し、公開ホスト名ルート、起動、停止、再接続、別回線のファイル転送を確認する。

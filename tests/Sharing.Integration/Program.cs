@@ -483,8 +483,11 @@ Assert(!TransferServer.LocalAddresses().Intersect(excludedInterfaceAddresses.Sel
        excludedInterfaceAddresses.All(address => !TransferServer.IsLocalSendConnection(address, address) &&
                                                   !TransferServer.IsLocalSendPeerAddress(address)),
     "LocalSend share URLs and receiver endpoints do not use addresses assigned to VPN or non-LAN interfaces");
+var syntheticOverlayAddress = IPAddress.Parse("10.254.14.7");
 Assert(TransferServer.IsLocalSendPeerAddress(IPAddress.Loopback) &&
-       excludedInterfaceAddresses.Length > 0 && excludedInterfaceAddresses.All(address => !TransferServer.IsLocalSendPeerAddress(address)),
+       !TransferServer.IsLocalSendPeerAddress(syntheticOverlayAddress, [syntheticOverlayAddress]) &&
+       TransferServer.IsLocalSendPeerAddress(syntheticOverlayAddress, Array.Empty<IPAddress>()) &&
+       excludedInterfaceAddresses.All(address => !TransferServer.IsLocalSendPeerAddress(address)),
     "LocalSend peer discovery rejects source addresses assigned to VPN or non-LAN adapters");
 var localSendProgress = new List<TransferProgress>();
 await using var localSend = await LocalSendDownloadServer.StartAsync("LocalSend互換テスト", files, null, TimeSpan.FromMinutes(10));

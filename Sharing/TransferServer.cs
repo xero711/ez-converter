@@ -261,7 +261,13 @@ public sealed partial class TransferServer : IAsyncDisposable
 
     internal static bool IsLocalSendPeerAddress(IPAddress? address)
     {
+        return IsLocalSendPeerAddress(address, EnumerateNonLanInterfaceAddresses());
+    }
+
+    internal static bool IsLocalSendPeerAddress(IPAddress? address, IEnumerable<IPAddress> nonLanInterfaceAddresses)
+    {
         if (address is null) return false;
+        ArgumentNullException.ThrowIfNull(nonLanInterfaceAddresses);
         if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
         if (IPAddress.IsLoopback(address)) return true;
         if (!IsLocalSendAddress(address)) return false;
@@ -271,15 +277,24 @@ public sealed partial class TransferServer : IAsyncDisposable
         // address as a LocalSend peer, even when it is in a private range.
         // Disconnected adapters are ignored so stale VPN addresses do not
         // hide an otherwise valid LAN peer using the same address.
+        return !nonLanInterfaceAddresses.Any(interfaceAddress =>
+        {
+            if (interfaceAddress.IsIPv4MappedToIPv6) interfaceAddress = interfaceAddress.MapToIPv4();
+            return interfaceAddress.Equals(address);
+        });
+    }
+
+    private static IEnumerable<IPAddress> EnumerateNonLanInterfaceAddresses()
+    {
         foreach (var network in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (network.OperationalStatus != OperationalStatus.Up || IsLocalSendInterface(network)) continue;
             IPInterfaceProperties properties;
             try { properties = network.GetIPProperties(); }
             catch (NetworkInformationException) { continue; }
-            if (properties.UnicastAddresses.Any(unicast => unicast.Address.Equals(address))) return false;
+            foreach (var unicast in properties.UnicastAddresses)
+                yield return unicast.Address;
         }
-        return true;
     }
 
     internal static bool IsLocalSendConnection(IPAddress? localAddress, IPAddress? remoteAddress)

@@ -91,6 +91,12 @@ try
     await VerifyUpdateAgentAsync(root);
     passed++;
 
+    if (args is ["--verify-live", var owner, var repository, var tag])
+    {
+        await VerifyLiveGitHubReleaseAsync(root, owner, repository, tag);
+        passed++;
+    }
+
     Console.WriteLine($"APP UPDATE INTEGRATION PASSED: {passed}");
 }
 finally
@@ -131,6 +137,35 @@ static string CreateRelease(string tag, string? digest, bool includeChecksum, st
         });
 
     return JsonSerializer.Serialize(new { draft = false, tag_name = tag, name = "Test release", body = "Release notes", assets });
+}
+
+static async Task VerifyLiveGitHubReleaseAsync(string testRoot, string owner, string repository, string expectedTag)
+{
+    var configured = Path.Combine(testRoot, "live-release-settings");
+    Directory.CreateDirectory(configured);
+    await File.WriteAllTextAsync(Path.Combine(configured, "appsettings.json"), Settings(owner, repository));
+
+    using var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+    var service = new AppUpdateService(configured, client, Path.Combine(testRoot, "live-release-download"), new Version(1, 0, 0, 0));
+    AppUpdateInfo? update = null;
+    for (var attempt = 0; attempt < 12 && update is null; attempt++)
+    {
+        try { update = await service.CheckForUpdateAsync(); }
+        catch (HttpRequestException) when (attempt < 11) { }
+        if (update is null) await Task.Delay(TimeSpan.FromSeconds(5));
+    }
+
+    if (update is null || !string.Equals(update.TagName, expectedTag, StringComparison.Ordinal))
+        throw new InvalidDataException($"The live GitHub updater did not detect the expected latest release {expectedTag}.");
+
+    var archivePath = await service.DownloadAndVerifyAsync(update);
+    var archiveInfo = new FileInfo(archivePath);
+    if (!archiveInfo.Exists || update.ArchiveSize is not null && archiveInfo.Length != update.ArchiveSize)
+        throw new InvalidDataException("The live GitHub update archive size does not match its release metadata.");
+
+    await using var archive = File.OpenRead(archivePath);
+    var digest = Convert.ToHexString(await SHA256.HashDataAsync(archive)).ToLowerInvariant();
+    Console.WriteLine($"PASS: live GitHub release {update.TagName} detected, downloaded ({archiveInfo.Length:N0} bytes), and SHA-256 verified ({digest})");
 }
 
 static async Task VerifyUpdateAgentAsync(string testRoot)
