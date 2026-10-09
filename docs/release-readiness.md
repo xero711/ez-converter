@@ -1,7 +1,7 @@
 # リリース準備状況
 
 - 確認日: 2026-10-09
-- 判定: **リリース未完了**。自動検証は進んでいますが、実機相互接続、公開経路、実GitHub更新の確認が残っています。
+- 判定: **v1.0.5を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。別PC・別回線での受け入れ確認と不要物の削除は残っています。
 
 ## 要件別の現在地
 
@@ -11,11 +11,11 @@
 | 登録コードとインターネット送信 | EZC1コードで招待URLを持ち運び、連絡先をDPAPI保護して保存。Quick TunnelとNamed Tunnelの選択、固定シグナリングポート、DPAPI保護トークン、`TUNNEL_TOKEN`環境変数での起動、公開HTTPSヘルスチェックを追加。共有統合テストでトークン非露出・ホスト名・ポート検証と固定ポート待受を確認。 | 共有統合テスト217件、WPF UI統合試験15項目、Quick Tunnel公開試験25項目に成功。公開招待をEZC1コードで別の送信側ビューに登録し、4,195,037バイトの承認付き送信とSHA-256を確認。実Cloudflare Named Tunnelと別回線PC／スマートフォンの実転送は未確認。 |
 | ファイル変換 | 8,003件の形式ルートと形式選択UIが一致。合成ファイルによる実変換16件が成功し、ImageMagick、LibreOffice/PDF、7-Zip、Calibre、FontForge、FFmpegを実行。不正ZIPはエラーになり、部分出力が残らないことを確認。 | Conversion.Matrix終了コード0。未検証の形式・エンジン・RAW/ベクター/スキャンPDF等は残るため、全形式で失敗しない保証ではない。 |
 | 動画URL保存 | YouTube／VimeoのURL形状、HLS・DASH、署名付きURLの引数保持を検証。署名付きHTTP MP4と合成HLSをyt-dlpで取得し、FFmpegの再読込に成功。 | 41件の統合確認に成功。実サイトの仕様変更やログイン必須ページは保証対象外。 |
-| 自動更新 | GitHub Release応答の検査、SHA-256、破損ZIP拒否、部分取得ファイルの削除、隔離されたUpdateAgentの置換・バックアップ・再起動を確認。Release workflowはタグからアプリ版を埋め込むよう変更。 | ローカル統合試験11件に成功。実GitHub Releaseからの更新は未確認。 |
+| 自動更新 | GitHub Release応答の検査、SHA-256、破損ZIP拒否、部分取得ファイルの削除、隔離されたUpdateAgentの置換・バックアップ・再起動を確認。Release workflowはタグからアプリ版を埋め込み、公開後にアプリ自身の更新処理を実行。 | ローカル統合11件に加え、[v1.0.5 Release run](https://github.com/xero711/ez-converter/actions/runs/37930137055)の12件目で公開ZIP 1,343,542,324 bytesを実ダウンロードし、SHA-256 `0e541b8d056e830b033bcc4c266305cd216adeae5db713b75f38dd7389a89df2`を照合。成功。 |
 | Releaseビルド | 変更後のWPFアプリ本体と共有ライブラリをRelease構成でビルド。 | 0警告・0エラー。 |
-| ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | 削除は未実施。自動レビューが整理操作を拒否したため、空き容量は増えていない。 |
-| 発行サイズ | 発行フォルダーは3,215,746,709 bytes。ZIP高速圧縮を出力ファイルなしで計測した推定サイズは1,434,055,258 bytes（1.336 GiB）。GitHub公式上限2 GiB未満。 | Release workflowに実ZIPサイズの上限検査を追加。 |
-| GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | 初回共有CIはGitHub runnerのネットワークアダプター前提で失敗。合成ネットワークアドレスを使う修正後、ローカル共有統合217件が成功し、更新したGitHub Actionsで再実行予定。実GitHub Releaseからの自動更新試験は未実施。
+| ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | 削除は未実施。自動レビューが一括削除操作を拒否したため、空き容量は増えていない。D:の空き容量は確認時点で441.33 GiB。 |
+| 発行サイズ | 発行フォルダーは3,215,746,709 bytes。 | v1.0.5のRelease ZIPは1,343,542,324 bytes（約1.25 GiB）で、GitHubの2 GiB上限未満。SHA-256 sidecarとGitHub asset digestを公開し、自動更新で実データを照合済み。 |
+| GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | [共有CI](https://github.com/xero711/ez-converter/actions/runs/37930136662)と[Release workflow](https://github.com/xero711/ez-converter/actions/runs/37930137055)が成功。v1.0.5の公開と自動更新検証まで完了。 |
 
 ## 公開共有の制約
 
@@ -29,6 +29,5 @@ WPF共有UI統合試験 (`dotnet run --project tests\Sharing.UIIntegration\Shari
 
 1. 公式LocalSend GUIを別端末で同じLANに接続し、発見・登録・実ファイル送受信を確認する。
 2. 別回線のPC／スマートフォンから、登録コードを使った双方の送受信とSHA-256を確認する。
-3. `v1.0.2`タグから実Releaseを作り、更新アプリが実配布ZIPを検出・ダウンロード・SHA-256検証することを確認する。
-4. 実Releaseを作成し、未更新アプリがそれを検出・検証・適用するところまで確認する。
-5. CloudflareアカウントでNamed Tunnelを作成し、公開ホスト名ルート、起動、停止、再接続、別回線のファイル転送を確認する。
+3. CloudflareアカウントでNamed Tunnelを作成し、公開ホスト名ルート、起動、停止、再接続、別回線のファイル転送を確認。
+4. ストレージ候補一覧の内容をレビュー後に整理し、整理前後の空き容量を計測する。自動レビューが拒否した一括削除操作は再実行せず、安全に対象を絞った方法を確定する。
