@@ -1,0 +1,68 @@
+name: Verify file conversions
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'MediaConverter.csproj'
+      - 'Models/**'
+      - 'Services/**'
+      - 'Sharing/**'
+      - 'Compression/**'
+      - 'tests/Conversion.Matrix/**'
+      - 'tests/Conversion.Integration/**'
+      - 'tests/Conversion.AudioIntegration/**'
+      - 'scripts/Prepare-BundledTools.ps1'
+      - '.github/workflows/conversion-verify.yml'
+  pull_request:
+    paths:
+      - 'MediaConverter.csproj'
+      - 'Models/**'
+      - 'Services/**'
+      - 'Sharing/**'
+      - 'Compression/**'
+      - 'tests/Conversion.Matrix/**'
+      - 'tests/Conversion.Integration/**'
+      - 'tests/Conversion.AudioIntegration/**'
+      - 'scripts/Prepare-BundledTools.ps1'
+      - '.github/workflows/conversion-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conversion:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore conversion matrix
+        run: dotnet restore .\tests\Conversion.Matrix\Conversion.Matrix.csproj
+
+      - name: Restore AV1 conversion integration
+        run: dotnet restore .\tests\Conversion.Integration\Conversion.Integration.csproj
+
+      - name: Restore audio conversion integration
+        run: dotnet restore .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj
+
+      - name: Prepare verified conversion engines
+        shell: pwsh
+        run: pwsh -File .\scripts\Prepare-BundledTools.ps1
+
+      - name: Verify conversion routes and representative file formats
+        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true
+
+      - name: Verify AV1 and FFmpeg download integration
+        run: dotnet run --project .\tests\Conversion.Integration\Conversion.Integration.csproj -c Release --no-restore
+
+      - name: Verify video-to-audio conversion integration
+        run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore

@@ -103,6 +103,44 @@ try
     var csvPath = await ConvertAsync(service, spreadsheetPath, "csv", Path.Combine(workRoot, "sheets"), officeTools);
     Require((await File.ReadAllTextAsync(csvPath)).Contains("試験", StringComparison.Ordinal), "XLSX -> CSV preserves Japanese cell values");
 
+    var flatPresentationPath = Path.Combine(workRoot, "presentation.fodp");
+    await File.WriteAllTextAsync(flatPresentationPath,
+        """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.presentation" office:version="1.2">
+          <office:font-face-decls/>
+          <office:styles>
+            <style:default-style style:family="graphic"><style:graphic-properties draw:stroke="none" draw:fill="none"/></style:default-style>
+            <style:style style:name="page" style:family="drawing-page"/>
+            <style:style style:name="title" style:family="presentation"><style:graphic-properties draw:stroke="none" draw:fill="none"/><style:paragraph-properties fo:text-align="center"/><style:text-properties fo:font-size="28pt" fo:font-weight="bold"/></style:style>
+            <style:style style:name="page-layout" style:family="page-layout"><style:page-layout-properties fo:page-width="28cm" fo:page-height="15.75cm" style:print-orientation="landscape"/></style:style>
+            <style:style style:name="title-layout" style:family="presentation-page-layout"><presentation:placeholder presentation:object="title" svg:x="2cm" svg:y="1cm" svg:width="24cm" svg:height="5cm"/></style:style>
+          </office:styles>
+          <office:automatic-styles/>
+          <office:master-styles><style:master-page style:name="Default" style:page-layout-name="page-layout"/></office:master-styles>
+          <office:body><office:presentation><draw:page office:name="Slide 1" draw:style-name="page" draw:master-page-name="Default" presentation:page-layout-name="title-layout"><draw:frame draw:style-name="title" presentation:class="title" svg:x="2cm" svg:y="1cm" svg:width="24cm" svg:height="5cm"><draw:text-box><text:p text:style-name="title">EZ Converter Presentation Fixture</text:p></draw:text-box></draw:frame></draw:page></office:presentation></office:body>
+        </office:document>
+        """,
+        new System.Text.UTF8Encoding(false));
+    var presentationDirectory = Path.Combine(workRoot, "presentation-fixture");
+    Directory.CreateDirectory(presentationDirectory);
+    var presentationProfile = new Uri(Path.Combine(workRoot, "presentation-fixture-profile") + Path.DirectorySeparatorChar).AbsoluteUri;
+    await RequireSuccessAsync(libreOffice,
+        ["--headless", $"-env:UserInstallation={presentationProfile}", "--convert-to", "odp", "--outdir", presentationDirectory, flatPresentationPath],
+        workRoot, "Flat ODF presentation fixture");
+    var odpPath = Path.Combine(presentationDirectory, "presentation.odp");
+    Require(File.Exists(odpPath) && new FileInfo(odpPath).Length > 0, "LibreOffice imported the synthetic flat ODF presentation");
+    var pptxPath = await ConvertAsync(service, odpPath, "pptx", Path.Combine(workRoot, "presentations"), officeTools);
+    using (var pptx = ZipFile.OpenRead(pptxPath))
+    {
+        Require(pptx.GetEntry("ppt/presentation.xml") is not null && pptx.GetEntry("ppt/slides/slide1.xml") is not null,
+            "ODP -> PPTX produced a valid OpenXML presentation package");
+    }
+    var presentationPdf = await ConvertAsync(service, pptxPath, "pdf", Path.Combine(workRoot, "presentation-pdf"), officeTools);
+    var presentationTextPath = await ConvertAsync(service, presentationPdf, "txt", Path.Combine(workRoot, "presentation-text"), new Dictionary<ConversionBackend, string?>());
+    Require((await File.ReadAllTextAsync(presentationTextPath)).Contains("EZ Converter Presentation Fixture", StringComparison.Ordinal),
+        "ODP -> PPTX -> PDF -> TXT preserves the slide text");
+
     var archiveSourceDirectory = Path.Combine(workRoot, "archive source");
     Directory.CreateDirectory(archiveSourceDirectory);
     await File.WriteAllTextAsync(Path.Combine(archiveSourceDirectory, "日本語 & sample.txt"), "archive fixture");
@@ -144,6 +182,21 @@ try
             && xvidProbe.Contains("mpeg4", StringComparison.OrdinalIgnoreCase)
             && xvidProbe.Contains("xvid", StringComparison.OrdinalIgnoreCase),
         "MP4 -> Xvid is readable as AVI with the MPEG-4 codec and XVID tag");
+
+    var audioPath = Path.Combine(workRoot, "audio source.wav");
+    await RequireSuccessAsync(ffmpeg,
+        ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=44100",
+         "-t", "1", "-c:a", "pcm_s16le", "-y", audioPath], workRoot, "WAV fixture");
+    var audioTools = new Dictionary<ConversionBackend, string?> { [ConversionBackend.Ffmpeg] = ffmpeg };
+    foreach (var (extension, codec) in new[] { ("mp3", "mp3"), ("flac", "flac") })
+    {
+        var audioOutput = await ConvertAsync(service, audioPath, extension, Path.Combine(workRoot, "audio-" + extension), audioTools);
+        var audioProbe = await ProbeAsync(ffprobe, audioOutput);
+        Require(audioProbe.Contains(codec, StringComparison.OrdinalIgnoreCase)
+                && audioProbe.Contains("audio", StringComparison.OrdinalIgnoreCase)
+                && !audioProbe.Contains("video", StringComparison.OrdinalIgnoreCase),
+            $"WAV -> {extension.ToUpperInvariant()} contains the expected audio codec and no video stream");
+    }
 
     var svgPath = Path.Combine(workRoot, "vector source.svg");
     await File.WriteAllTextAsync(svgPath,
@@ -236,7 +289,7 @@ static async Task RequireSuccessAsync(string executable, IEnumerable<string> arg
 static async Task<string> ProbeAsync(string ffprobe, string path)
 {
     var result = await ExternalToolRunner.RunAsync(ffprobe,
-        ["-v", "error", "-show_entries", "format=format_name:stream=codec_name,codec_tag_string",
+        ["-v", "error", "-show_entries", "format=format_name:stream=codec_type,codec_name,codec_tag_string",
          "-of", "default=noprint_wrappers=1:nokey=1", path], CancellationToken.None);
     Require(result.ExitCode == 0, "ffprobe could not read converted video: " + result.StandardError);
     return result.StandardOutput;

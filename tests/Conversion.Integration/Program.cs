@@ -4,23 +4,23 @@ using MediaConverter.Models;
 using MediaConverter.Services;
 
 var ffmpeg = ToolLocator.FindFfmpeg();
-if (ffmpeg is null)
-{
-    Console.WriteLine("SKIP: FFmpeg is not installed.");
-    return 0;
-}
-
-var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
-if (!File.Exists(ffprobe))
-{
-    Console.WriteLine("SKIP: ffprobe is not installed beside FFmpeg.");
-    return 0;
-}
-
 var root = Path.Combine(Path.GetTempPath(), "EZConverter-AV1-Integration-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {
+    if (ffmpeg is null)
+    {
+        var updater = new FfmpegUpdateService(Path.Combine(root, "managed-tools"));
+        _ = await updater.UpdateIfNeededAsync(force: true);
+        ffmpeg = updater.ExecutablePath;
+    }
+    if (!File.Exists(ffmpeg))
+        throw new FileNotFoundException("FFmpeg could not be prepared for the AV1 conversion integration check.", ffmpeg);
+
+    var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
+    if (!File.Exists(ffprobe))
+        throw new FileNotFoundException("FFprobe could not be prepared for the AV1 conversion integration check.", ffprobe);
+
     var sourcePath = Path.Combine(root, "source.mp4");
     var generated = await ExternalToolRunner.RunAsync(ffmpeg,
         ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=24",
