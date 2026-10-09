@@ -1,7 +1,7 @@
 # リリース準備状況
 
 - 確認日: 2026-10-09
-- 判定: **v1.0.5を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。別PC・別回線での受け入れ確認と不要物の削除は残っています。
+- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。別PC・別回線での受け入れ確認と不要物の削除は残っています。
 
 ## 要件別の現在地
 
@@ -11,11 +11,11 @@
 | 登録コードとインターネット送信 | EZC1コードで招待URLを持ち運び、連絡先をDPAPI保護して保存。Quick TunnelとNamed Tunnelの選択、固定シグナリングポート、DPAPI保護トークン、`TUNNEL_TOKEN`環境変数での起動、公開HTTPSヘルスチェックを追加。共有統合テストでトークン非露出・ホスト名・ポート検証と固定ポート待受を確認。 | 共有統合テスト217件、WPF UI統合試験15項目、Quick Tunnel公開試験25項目に成功。公開招待をEZC1コードで別の送信側ビューに登録し、4,195,037バイトの承認付き送信とSHA-256を確認。実Cloudflare Named Tunnelと別回線PC／スマートフォンの実転送は未確認。 |
 | ファイル変換 | 254個の一意な入力形式×170出力候補（43,180組合せ）を走査し、8,003件の経路判定と形式選択UIが一致。これは同じresolverの整合性検査で、全経路の実変換ではない。Conversion.Matrixは終了コード0。アプリ変換器による合成データの成功19件（PNG→JPG/WebP/TIFF、HTML→DOCX→PDF→TXT、XLSX→CSV、ZIP→7z/TAR.GZ/JAR、TAR.GZ→ZIP、EPUB↔AZW3、SVG→EPS/PS、MP4→3GP/Xvid、TTF→OTF、画像だけのHTML→PDF）、FontForgeによるOTF→TTF再読込1件を確認。別テストのMP4→AV1と動画→MP3も成功。不正ZIPとOCRなしの画像PDF→TXTは、期待通り失敗し部分出力を残さない。 | ImageMagick、LibreOffice/PDF、7-Zip、Calibre、FontForge、FFmpegを使用。EPS/PS検査はGhostscriptを要求せず、PostScriptヘッダー・BoundingBox・終端を確認。RAW、残りのベクター形式、プレゼン、その他大半の映像・音声拡張子などは未検査で、全形式の成功保証ではない。 |
 | 動画URL保存 | YouTube／VimeoのURL形状、HLS・DASH、署名付きURLの引数保持を検証。署名付きHTTP MP4と合成HLSをyt-dlpで取得し、FFmpegの再読込に成功。 | 41件の統合確認に成功。実サイトの仕様変更やログイン必須ページは保証対象外。 |
-| 自動更新 | GitHub Release応答の検査、SHA-256、破損ZIP拒否、部分取得ファイルの削除、隔離されたUpdateAgentの置換・バックアップ・再起動を確認。Release workflowはタグからアプリ版を埋め込み、公開後にアプリ自身の更新処理を実行。 | ローカル統合11件に加え、[v1.0.5 Release run](https://github.com/xero711/ez-converter/actions/runs/37930137055)の12件目で公開ZIP 1,343,542,324 bytesを実ダウンロードし、SHA-256 `0e541b8d056e830b033bcc4c266305cd216adeae5db713b75f38dd7389a89df2`を照合。成功。 |
+| 自動更新 | GitHub Release応答の検査、SHA-256、破損ZIP拒否、部分取得ファイルの削除、隔離されたUpdateAgentの置換・バックアップ・再起動を確認。Release workflowはタグからアプリ版を埋め込み、公開後にアプリ自身の更新処理を実行。 | ローカル統合11件に加え、[v1.0.6 Release run](https://github.com/xero711/ez-converter/actions/runs/37936030969)の12件目で公開ZIP 1,343,542,303 bytesを実ダウンロードし、SHA-256 `173ea61efa32c818a578183db895872580ca75435c8caf771ec3f1f57089fb1e`を照合。成功。 |
 | Releaseビルド | 変更後のWPFアプリ本体と共有ライブラリをRelease構成でビルド。 | 0警告・0エラー。 |
 | ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | 削除は未実施。自動レビューが一括削除操作を拒否したため、空き容量は増えていない。2026-10-09再確認時のD:空き容量は441.32 GiB。 |
-| 発行サイズ | 発行フォルダーは3,215,746,709 bytes。 | v1.0.5のRelease ZIPは1,343,542,324 bytes（約1.25 GiB）で、GitHubの2 GiB上限未満。SHA-256 sidecarとGitHub asset digestを公開し、自動更新で実データを照合済み。 |
-| GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | [共有CI](https://github.com/xero711/ez-converter/actions/runs/37930136662)と[Release workflow](https://github.com/xero711/ez-converter/actions/runs/37930137055)が成功。v1.0.5の公開と自動更新検証まで完了。 |
+| 発行サイズ | 発行フォルダーは3,215,746,709 bytes。 | v1.0.6のRelease ZIPは1,343,542,303 bytes（約1.25 GiB）で、GitHubの2 GiB上限未満。SHA-256 sidecarとGitHub asset digestを公開し、自動更新で実データを照合済み。 |
+| GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | [共有CI](https://github.com/xero711/ez-converter/actions/runs/37936018958)と[Release workflow](https://github.com/xero711/ez-converter/actions/runs/37936030969)が成功。v1.0.6の公開と自動更新検証まで完了。 |
 
 ## 公開共有の制約
 
