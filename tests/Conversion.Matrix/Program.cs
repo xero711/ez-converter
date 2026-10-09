@@ -57,7 +57,11 @@ try
     var service = new ConversionService();
 
     var imagePath = Path.Combine(workRoot, "image source 日本語.png");
-    await RequireSuccessAsync(imageMagick, ["-size", "40x30", "xc:#f05a70", imagePath], workRoot, "ImageMagick fixture");
+    await RequireSuccessAsync(imageMagick,
+        ["-size", "40x30", "xc:none", "-fill", "#f05a70", "-draw", "rectangle 0,0 19,14",
+         "-fill", "#2540b8", "-draw", "rectangle 20,0 39,14", "-fill", "rgba(25,180,90,0.5)",
+         "-draw", "rectangle 0,15 19,29", "-fill", "rgba(250,200,20,0.75)", "-draw", "rectangle 20,15 39,29", imagePath],
+        workRoot, "ImageMagick multi-color alpha fixture");
     var imageTools = new Dictionary<ConversionBackend, string?> { [ConversionBackend.ImageMagick] = imageMagick };
     foreach (var extension in new[] { "jpg", "webp", "tiff" })
     {
@@ -244,6 +248,28 @@ try
     await RequireSuccessAsync(fontForge, ["-lang=ff", "-c", $"Open(\"{otfPath.Replace("\\", "/", StringComparison.Ordinal)}\"); Generate(\"{fontRoundTrip.Replace("\\", "/", StringComparison.Ordinal)}\"); Close();"], workRoot, "OTF output reopen");
     Require(new FileInfo(fontRoundTrip).Length > 0, "TTF -> OTF -> TTF remains readable");
 
+    if (args.Contains("--full-output-sweep", StringComparer.OrdinalIgnoreCase))
+    {
+        var sweepFailures = await RunFullOutputSweepAsync(service, workRoot,
+            [imagePath, svgPath, videoPath, audioPath, docxPath, spreadsheetPath, pptxPath, archivePath, epubPath, windowsFont],
+            new Dictionary<ConversionBackend, string?>
+            {
+                [ConversionBackend.ImageMagick] = imageMagick,
+                [ConversionBackend.Ffmpeg] = ffmpeg,
+                [ConversionBackend.LibreOffice] = libreOffice,
+                [ConversionBackend.SevenZip] = sevenZip,
+                [ConversionBackend.Calibre] = calibre,
+                [ConversionBackend.FontForge] = fontForge
+            }, workRoot);
+        if (sweepFailures.Count > 0)
+        {
+            Console.Error.WriteLine("Unsupported or invalid writable output routes:");
+            foreach (var failure in sweepFailures) Console.Error.WriteLine("  " + failure);
+            throw new InvalidOperationException($"Full output sweep found {sweepFailures.Count} failed routes.");
+        }
+        Console.WriteLine("PASS: every writable output in the catalog completed a real conversion and engine-specific readback.");
+    }
+
     var invalidArchive = Path.Combine(workRoot, "invalid.zip");
     await File.WriteAllTextAsync(invalidArchive, "not an archive");
     var failureDirectory = Path.Combine(workRoot, "failed conversion");
@@ -293,6 +319,99 @@ static async Task<string> ProbeAsync(string ffprobe, string path)
          "-of", "default=noprint_wrappers=1:nokey=1", path], CancellationToken.None);
     Require(result.ExitCode == 0, "ffprobe could not read converted video: " + result.StandardError);
     return result.StandardOutput;
+}
+
+static async Task<List<string>> RunFullOutputSweepAsync(
+    ConversionService service,
+    string workRoot,
+    IReadOnlyList<string> sourcePaths,
+    IReadOnlyDictionary<ConversionBackend, string?> tools,
+    string conversionRoot)
+{
+    var failures = new List<string>();
+    var tested = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var sourcePath in sourcePaths)
+    {
+        var item = new MediaItem(sourcePath);
+        var sourceFormat = item.SourceFormat ?? throw new InvalidDataException($"Sweep fixture is not catalogued: {sourcePath}");
+        var targets = MediaFormatCatalog.GetOutputFormats(sourceFormat);
+        foreach (var target in targets)
+        {
+            var routeName = $"{sourceFormat.Extension} -> {target.Extension}{(target.VideoCodec is null ? "" : " (" + target.VideoCodec + ")")}";
+            if (!tested.Add(routeName)) continue;
+
+            try
+            {
+                var outputDirectory = Path.Combine(conversionRoot, "output-sweep", sourceFormat.Extension, target.Extension,
+                    string.IsNullOrWhiteSpace(target.VideoCodec) ? "default" : "av1");
+                var outputPath = await service.ConvertAsync(item, target, outputDirectory, tools, progress: null, CancellationToken.None);
+                Require(File.Exists(outputPath) && new FileInfo(outputPath).Length > 0, $"{routeName} produced a nonempty output");
+
+                switch (target.Backend)
+                {
+                    case ConversionBackend.LibreOffice:
+                        await ValidateOfficeReadbackAsync(tools[ConversionBackend.LibreOffice]!, outputPath,
+                            Path.Combine(workRoot, "output-sweep-readback", sourceFormat.Extension, target.Extension));
+                        break;
+                    case ConversionBackend.Calibre:
+                        var reopenedEpub = Path.Combine(workRoot, "output-sweep-readback", target.Extension + ".epub");
+                        Directory.CreateDirectory(Path.GetDirectoryName(reopenedEpub)!);
+                        await RequireSuccessAsync(tools[ConversionBackend.Calibre]!, [outputPath, reopenedEpub], workRoot,
+                            $"Calibre readback of {routeName}");
+                        using (var ebook = ZipFile.OpenRead(reopenedEpub))
+                            Require(ebook.GetEntry("META-INF/container.xml") is not null, $"{routeName} reopens as a valid EPUB package");
+                        break;
+                    case ConversionBackend.FontForge:
+                        var reopenedFont = Path.Combine(workRoot, "output-sweep-readback", target.Extension + ".ttf");
+                        Directory.CreateDirectory(Path.GetDirectoryName(reopenedFont)!);
+                        var sourceFont = outputPath.Replace("\\", "/", StringComparison.Ordinal);
+                        var targetFont = reopenedFont.Replace("\\", "/", StringComparison.Ordinal);
+                        await RequireSuccessAsync(tools[ConversionBackend.FontForge]!,
+                            ["-lang=ff", "-c", $"Open(\"{sourceFont}\"); Generate(\"{targetFont}\"); Close();"], workRoot,
+                            $"FontForge readback of {routeName}");
+                        Require(new FileInfo(reopenedFont).Length > 0, $"{routeName} reopens as a nonempty TTF");
+                        break;
+                }
+
+                Console.WriteLine($"PASS output sweep: {routeName}");
+            }
+            catch (Exception error) when (error is not OutOfMemoryException and not StackOverflowException)
+            {
+                failures.Add($"{routeName}: {error.Message}");
+                Console.Error.WriteLine($"FAIL output sweep: {routeName}: {error.Message}");
+            }
+        }
+    }
+
+    Console.WriteLine($"Output sweep covered {tested.Count:N0} unique source/output routes.");
+    return failures;
+}
+
+static async Task ValidateOfficeReadbackAsync(string executable, string sourcePath, string outputRoot)
+{
+    if (Path.GetExtension(sourcePath).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+    {
+        await using var inputPdf = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 8, useAsync: true);
+        var inputHeader = new byte[5];
+        await inputPdf.ReadExactlyAsync(inputHeader);
+        Require(System.Text.Encoding.ASCII.GetString(inputHeader) == "%PDF-", "LibreOffice PDF output has a valid PDF header");
+        return;
+    }
+
+    var outputDirectory = outputRoot + "-pdf";
+    var profileDirectory = outputRoot + "-profile";
+    Directory.CreateDirectory(outputDirectory);
+    var profileUri = new Uri(profileDirectory + Path.DirectorySeparatorChar).AbsoluteUri;
+    await RequireSuccessAsync(executable,
+        ["--headless", $"-env:UserInstallation={profileUri}", "--convert-to", "pdf", "--outdir", outputDirectory, sourcePath],
+        outputDirectory, $"LibreOffice readback of {Path.GetFileName(sourcePath)}");
+    var pdfPath = Path.Combine(outputDirectory, Path.GetFileNameWithoutExtension(sourcePath) + ".pdf");
+    Require(File.Exists(pdfPath) && new FileInfo(pdfPath).Length > 0, $"LibreOffice readback produced a PDF for {Path.GetFileName(sourcePath)}");
+    await using var pdf = new FileStream(pdfPath, FileMode.Open, FileAccess.Read, FileShare.Read, 8, useAsync: true);
+    var header = new byte[5];
+    await pdf.ReadExactlyAsync(header);
+    Require(System.Text.Encoding.ASCII.GetString(header) == "%PDF-", $"LibreOffice readback output has a PDF header for {Path.GetFileName(sourcePath)}");
 }
 
 static string? FindTool(string repositoryRoot, IEnumerable<string> relativePaths)

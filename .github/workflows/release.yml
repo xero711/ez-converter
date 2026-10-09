@@ -105,8 +105,8 @@ jobs:
         shell: pwsh
         run: pwsh -File .\scripts\Prepare-BundledTools.ps1
 
-      - name: Verify conversion catalog and representative formats
-        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true
+      - name: Verify conversion catalog and all writable output formats
+        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true -- --full-output-sweep
 
       - name: Verify video conversion output and progress
         run: dotnet run --project .\tests\Conversion.Integration\Conversion.Integration.csproj -c Release --no-restore
