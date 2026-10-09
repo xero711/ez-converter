@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\Sharing\EZConverter.Sharing.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+    <Compile Include="..\..\Services\InvitationCodeService.cs" Link="Services\InvitationCodeService.cs" />
+    <Compile Include="..\..\Views\PeerSessionWindow.cs" Link="Views\PeerSessionWindow.cs" />
+    <Compile Include="..\..\Views\P2PInvitationSender.cs" Link="Views\P2PInvitationSender.cs" />
+  </ItemGroup>
+</Project>

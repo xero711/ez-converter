@@ -1,0 +1,407 @@
+<UserControl x:Class="MediaConverter.Views.SharingView"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Foreground="{DynamicResource PrimaryTextBrush}">
+ <UserControl.Resources>
+  <Style x:Key="Card" TargetType="Border">
+   <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+   <Setter Property="BorderThickness" Value="1" />
+   <Setter Property="CornerRadius" Value="10" />
+   <Setter Property="Padding" Value="16" />
+  </Style>
+  <Style x:Key="SectionTitle" TargetType="TextBlock">
+   <Setter Property="FontSize" Value="16" />
+   <Setter Property="FontWeight" Value="SemiBold" />
+   <Setter Property="Margin" Value="0,0,0,10" />
+   <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+  </Style>
+  <Style x:Key="NavigationButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+   <Setter Property="HorizontalContentAlignment" Value="Left" />
+   <Setter Property="MinHeight" Value="44" />
+   <Setter Property="Margin" Value="0,3" />
+   <Setter Property="Padding" Value="14,10" />
+   <Setter Property="Background" Value="Transparent" />
+   <Setter Property="BorderBrush" Value="Transparent" />
+   <Style.Triggers>
+    <Trigger Property="Tag" Value="Active">
+     <Setter Property="Background" Value="{DynamicResource SelectedItemBackgroundBrush}" />
+     <Setter Property="BorderBrush" Value="{DynamicResource SelectedItemBackgroundBrush}" />
+     <Setter Property="Foreground" Value="{DynamicResource PrimaryBrush}" />
+     <Setter Property="FontWeight" Value="SemiBold" />
+    </Trigger>
+    <Trigger Property="IsMouseOver" Value="True">
+     <Setter Property="Background" Value="{DynamicResource ButtonHoverBackgroundBrush}" />
+    </Trigger>
+   </Style.Triggers>
+  </Style>
+  <Style TargetType="ListBox">
+   <Setter Property="Background" Value="{DynamicResource ControlBackgroundBrush}" />
+   <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+   <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+   <Setter Property="Padding" Value="5" />
+   <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style TargetType="ListBoxItem">
+   <Setter Property="Foreground" Value="{DynamicResource PrimaryTextBrush}" />
+   <Setter Property="Padding" Value="7" />
+   <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+   <Style.Triggers>
+    <Trigger Property="IsSelected" Value="True">
+     <Setter Property="Background" Value="{DynamicResource SelectedItemBackgroundBrush}" />
+    </Trigger>
+   </Style.Triggers>
+  </Style>
+ </UserControl.Resources>
+
+ <Grid Margin="16,14,16,12">
+  <Grid.ColumnDefinitions>
+   <ColumnDefinition Width="172" />
+   <ColumnDefinition Width="14" />
+   <ColumnDefinition Width="*" />
+  </Grid.ColumnDefinitions>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="*" />
+   <RowDefinition Height="Auto" />
+  </Grid.RowDefinitions>
+
+  <Border Grid.Column="0" Grid.RowSpan="2" Style="{StaticResource Card}" Padding="12">
+   <Grid>
+    <Grid.RowDefinitions>
+     <RowDefinition Height="Auto" />
+     <RowDefinition Height="*" />
+     <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel Margin="6,4,6,18">
+     <TextBlock Text="ファイル送受信" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource TitleForegroundBrush}" />
+     <TextBlock Text="同じネットワークで簡単共有" FontSize="11" Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0" />
+    </StackPanel>
+    <StackPanel Grid.Row="1">
+     <Button x:Name="SendPageButton" Content="送る" CommandParameter="Send" Tag="Active" Style="{StaticResource NavigationButton}" Click="Navigation_Click" />
+     <Button x:Name="ReceivePageButton" Content="受け取る" CommandParameter="Receive" Style="{StaticResource NavigationButton}" Click="Navigation_Click" />
+     <Button x:Name="LinksPageButton" Content="URL共有" CommandParameter="Links" Style="{StaticResource NavigationButton}" Click="Navigation_Click" />
+     <Button x:Name="HistoryPageButton" Content="転送履歴" CommandParameter="History" Style="{StaticResource NavigationButton}" Click="Navigation_Click" />
+    </StackPanel>
+    <StackPanel Grid.Row="2" Margin="6,10,6,4">
+     <TextBlock Text="受信状態" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" />
+     <TextBlock x:Name="ListeningStatusText" Text="停止中" FontWeight="SemiBold" Margin="0,3,0,0" />
+    </StackPanel>
+   </Grid>
+  </Border>
+
+  <Grid Grid.Column="2" Grid.Row="0">
+   <Grid.RowDefinitions>
+    <RowDefinition Height="Auto" />
+    <RowDefinition Height="*" />
+   </Grid.RowDefinitions>
+   <Grid Margin="2,0,2,14">
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="*" />
+     <ColumnDefinition Width="Auto" />
+    </Grid.ColumnDefinitions>
+    <StackPanel VerticalAlignment="Center">
+     <TextBlock x:Name="PageTitleText" Text="送る" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TitleForegroundBrush}" />
+     <TextBlock x:Name="PageSubtitleText" Text="LAN内のLocalSend対応PC、または受信招待URLへ直接送信します。" Foreground="{DynamicResource MutedTextBrush}" Margin="0,4,0,0" />
+    </StackPanel>
+    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+     <Button x:Name="StartButton" Content="受信を開始" Style="{StaticResource PrimaryButton}" Click="Start_Click" />
+     <Button x:Name="StopButton" Content="停止" Click="Stop_Click" IsEnabled="False" />
+    </StackPanel>
+   </Grid>
+
+   <Grid Grid.Row="1">
+    <Grid x:Name="SendPage">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="1.05*" />
+      <ColumnDefinition Width="14" />
+      <ColumnDefinition Width="0.95*" />
+     </Grid.ColumnDefinitions>
+     <Border Grid.Column="0" Style="{StaticResource Card}" AllowDrop="True" DragOver="Files_DragOver" Drop="Files_Drop">
+      <Grid>
+       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+       </Grid.RowDefinitions>
+       <TextBlock Text="送るファイル" Style="{StaticResource SectionTitle}" />
+       <WrapPanel Grid.Row="1" Margin="-4,0,0,8">
+        <Button Content="ファイルを追加" Style="{StaticResource PrimaryButton}" Click="AddFiles_Click" />
+        <Button Content="フォルダー" Click="AddFolder_Click" />
+        <Button Content="クリア" Click="ClearFiles_Click" />
+       </WrapPanel>
+       <TextBlock Grid.Row="2" Text="ここにファイルやフォルダーをドロップできます" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" Margin="0,0,0,7" />
+       <ListBox x:Name="SelectedFilesList" Grid.Row="3" ItemsSource="{Binding SelectedFiles}" MinHeight="100">
+        <ListBox.ItemTemplate>
+         <DataTemplate>
+          <StackPanel>
+           <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Path}" />
+           <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{DynamicResource MutedTextBrush}" />
+          </StackPanel>
+         </DataTemplate>
+        </ListBox.ItemTemplate>
+       </ListBox>
+       <TextBlock x:Name="FileCountText" Grid.Row="4" Text="ファイルを追加してください" Margin="0,8,0,0" Foreground="{DynamicResource MutedTextBrush}" />
+      </Grid>
+     </Border>
+
+     <Border Grid.Column="2" Style="{StaticResource Card}">
+      <Grid>
+       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+       <RowDefinition Height="Auto" />
+       <RowDefinition Height="*" />
+       <RowDefinition Height="Auto" />
+       <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+       </Grid.RowDefinitions>
+       <TextBlock Text="LocalSend対応端末" Style="{StaticResource SectionTitle}" />
+       <TextBlock x:Name="PeerStatusText" Grid.Row="1" Text="受信を開始すると、同じネットワーク上のLocalSend端末が表示されます。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+       <ListBox x:Name="PeersList" Grid.Row="2" ItemsSource="{Binding Peers}" DisplayMemberPath="DisplayName" SelectionMode="Extended" MinHeight="90" ToolTip="LocalSend対応端末を選択します。Ctrlキーで複数選択できます。" />
+       <Button x:Name="SendPeerButton" Grid.Row="3" Content="選択した端末へ送信" Style="{StaticResource PrimaryButton}" Click="SendPeer_Click" HorizontalAlignment="Stretch" Margin="0,10,0,8" />
+       <Grid Grid.Row="4" Margin="0,0,0,4">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <TextBlock Text="LocalSend PIN" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="{DynamicResource MutedTextBrush}" />
+        <TextBox x:Name="LocalSendPinBox" Grid.Column="1" MaxLength="6" ToolTip="受信側から指定された6桁PIN。不要な場合は空欄にします。" />
+       </Grid>
+       <Expander Grid.Row="5" Header="接続URLを使って送る">
+       <Grid Margin="0,8,0,0">
+         <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+         </Grid.RowDefinitions>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="LAN内のLocalSend接続URL、または受信側PCが発行した招待URLを貼ります。招待URLなら、受信側の許可後にWebRTCで直接送信します。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+         <TextBox x:Name="TargetUrlBox" Grid.Row="1" ToolTip="LocalSend受信端末のLAN内URL、またはEZ Converterの受信招待URL" />
+         <Button x:Name="SendUrlButton" Grid.Row="1" Grid.Column="1" Content="URLの相手へ送る" Click="SendUrl_Click" Margin="8,0,0,0" />
+         <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="インターネット登録コード" FontWeight="SemiBold" Margin="0,8,0,4" />
+         <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="相手から受け取ったEZC1コードを登録すると、同じLANにいない相手にも送れます。コードは招待URLそのものを含むため、受信側PCの起動中だけ有効です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+         <TextBox x:Name="RegisteredContactNameBox" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,6" ToolTip="連絡先の表示名" />
+         <TextBox x:Name="RegistrationCodeBox" Grid.Row="5" Grid.ColumnSpan="2" MinHeight="58" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6" ToolTip="EZC1-で始まる登録コード" />
+         <WrapPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,0,0,6">
+          <Button x:Name="AddRegisteredContactButton" Content="コードを登録" Click="AddRegisteredContact_Click" Margin="0,0,6,6" />
+          <Button x:Name="RemoveRegisteredContactButton" Content="登録を削除" Click="RemoveRegisteredContact_Click" Margin="0,0,6,6" />
+         </WrapPanel>
+         <ComboBox x:Name="RegisteredContactsBox" Grid.Row="7" Grid.ColumnSpan="2" ItemsSource="{Binding RegisteredContacts}" DisplayMemberPath="DisplayName" SelectedIndex="0" Margin="0,0,0,6" ToolTip="保存したインターネット招待先" />
+         <Button x:Name="SendRegisteredContactButton" Grid.Row="8" Grid.ColumnSpan="2" Content="登録済みの相手へ送る" Style="{StaticResource PrimaryButton}" Click="SendRegisteredContact_Click" />
+        </Grid>
+       </Expander>
+      </Grid>
+     </Border>
+    </Grid>
+
+    <Grid x:Name="ReceivePage" Visibility="Collapsed">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="1.02*" />
+      <ColumnDefinition Width="14" />
+      <ColumnDefinition Width="0.98*" />
+     </Grid.ColumnDefinitions>
+     <Border Grid.Column="0" Style="{StaticResource Card}">
+      <Grid>
+       <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+       </Grid.RowDefinitions>
+       <TextBlock Text="受信する場所" Style="{StaticResource SectionTitle}" />
+       <Grid Grid.Row="1" Margin="0,0,0,12">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="92" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <TextBlock Text="このPCの名前" VerticalAlignment="Center" />
+        <TextBox x:Name="DeviceNameBox" Grid.Column="1" MaxLength="64" />
+       </Grid>
+       <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="92" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+        <TextBlock Text="保存先" VerticalAlignment="Center" />
+        <DockPanel Grid.Column="1">
+         <Button x:Name="BrowseReceiveButton" DockPanel.Dock="Right" Content="変更" Click="BrowseReceive_Click" Margin="8,0,0,0" />
+         <TextBox x:Name="ReceiveDirectoryBox" IsReadOnly="True" ToolTip="受信したファイルの保存先" />
+        </DockPanel>
+       </Grid>
+       <Button x:Name="OpenReceiveButton" Grid.Row="3" Content="保存先フォルダーを開く" Click="OpenReceive_Click" HorizontalAlignment="Left" />
+       <Expander Grid.Row="4" Header="見つからないPCと接続する" Margin="0,12,0,0" VerticalAlignment="Top">
+        <StackPanel Margin="0,8,0,0">
+         <TextBlock Text="LocalSend対応端末とは同じネットワークで直接送受信します。見つからない場合は、ルーターの端末間通信制限とWindowsファイアウォールを確認してください。ネットワークが「パブリック」の場合、受信通信が遮断されることがあります。許可する場合は、信頼できるネットワークに限り、UDP 53317と下の接続URLに表示されるTCPポートを許可してください。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,8" />
+         <DockPanel>
+          <ComboBox x:Name="AddressCombo" DockPanel.Dock="Left" Width="142" Margin="0,0,8,0" SelectionChanged="Address_Changed" />
+          <Button DockPanel.Dock="Right" Content="コピー" Click="CopyConnection_Click" />
+          <TextBox x:Name="ConnectionUrlBox" IsReadOnly="True" />
+         </DockPanel>
+         <TextBlock x:Name="FingerprintText" Margin="0,8,0,0" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
+        </StackPanel>
+       </Expander>
+      </Grid>
+     </Border>
+
+     <Grid Grid.Column="2">
+      <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="14" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+      <Border x:Name="IncomingPanel" Grid.Row="0" Style="{StaticResource Card}">
+       <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+        <TextBlock Text="受信リクエスト" Style="{StaticResource SectionTitle}" />
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+         <TextBlock Text="LocalSend受信PIN（任意）" VerticalAlignment="Center" Margin="0,0,10,0" />
+         <PasswordBox x:Name="LocalSendReceivePinBox" Grid.Column="1" MaxLength="6" Padding="9,7" Background="{DynamicResource ControlBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderBrush="{DynamicResource BorderBrush}" ToolTip="設定すると、このPCへのLocalSend転送に6桁PINが必要になります。" />
+        </Grid>
+        <TextBlock x:Name="NoIncomingText" Grid.Row="2" Text="相手から届いたファイルは、ここで確認して受け取れます。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,8,0,0">
+         <ItemsControl ItemsSource="{Binding IncomingOffers}">
+          <ItemsControl.ItemTemplate>
+           <DataTemplate>
+            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,8">
+             <Grid>
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <DockPanel>
+               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="受け取る" Style="{StaticResource PrimaryButton}" Tag="{Binding}" Click="Accept_Click" />
+                <Button Content="拒否" Tag="{Binding}" Click="Reject_Click" />
+               </StackPanel>
+               <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+              <TextBlock Grid.Row="1" Text="{Binding FileNames}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" MaxHeight="54" />
+             </Grid>
+            </Border>
+           </DataTemplate>
+          </ItemsControl.ItemTemplate>
+         </ItemsControl>
+        </ScrollViewer>
+       </Grid>
+      </Border>
+      <Border Grid.Row="2" Style="{StaticResource Card}" Padding="14">
+       <StackPanel>
+        <TextBlock Text="共有URLから受け取る" Style="{StaticResource SectionTitle}" />
+        <TextBox x:Name="ReceiveUrlBox" ToolTip="相手から受け取った共有URL" Margin="0,0,0,8" />
+        <Grid>
+         <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+         <TextBlock Text="パスワード" VerticalAlignment="Center" Margin="0,0,8,0" />
+         <PasswordBox x:Name="ReceivePasswordBox" Grid.Column="1" MaxLength="128" Padding="9,7" Background="{DynamicResource ControlBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderBrush="{DynamicResource BorderBrush}" />
+         <Button x:Name="ReceiveUrlButton" Grid.Column="2" Content="受け取る" Style="{StaticResource PrimaryButton}" Click="ReceiveUrl_Click" Margin="8,0,0,0" />
+        </Grid>
+       </StackPanel>
+      </Border>
+     </Grid>
+    </Grid>
+
+    <Grid x:Name="LinksPage" Visibility="Collapsed">
+     <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="0.94*" />
+      <ColumnDefinition Width="14" />
+      <ColumnDefinition Width="1.06*" />
+     </Grid.ColumnDefinitions>
+     <Border Grid.Column="0" Style="{StaticResource Card}">
+      <Grid>
+       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+       <TextBlock Text="URLを作る" Style="{StaticResource SectionTitle}" />
+       <TextBlock x:Name="LinkFileCountText" Grid.Row="1" Text="共有するファイルを選んでください。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,12" />
+       <StackPanel Grid.Row="2">
+        <WrapPanel Margin="0,0,0,6">
+         <Button x:Name="LinkAddFilesButton" Content="ファイルを追加" Click="AddFiles_Click" Margin="0,0,6,6" />
+         <Button x:Name="LinkAddFolderButton" Content="フォルダーを追加" Click="AddFolder_Click" Margin="0,0,6,6" />
+         <Button x:Name="LinkClearFilesButton" Content="選択をクリア" Click="ClearFiles_Click" Margin="0,0,6,6" />
+        </WrapPanel>
+        <Button x:Name="CreateShareButton" Content="選択したファイルの共有URLを作る" Style="{StaticResource PrimaryButton}" Click="CreateShare_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4" />
+        <Button x:Name="CreateInviteButton" Content="相手から受け取るURLを作る" Click="CreateInvite_Click" HorizontalAlignment="Stretch" Margin="0,4,0,8" />
+        <Expander Header="有効期限・パスワードなど">
+         <StackPanel Margin="0,8,0,0">
+          <Grid Margin="0,0,0,8">
+           <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+           <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+           <TextBlock Text="期限" VerticalAlignment="Center" Margin="0,0,8,8" />
+           <ComboBox x:Name="LifetimeCombo" Grid.Column="1" SelectedIndex="0" Margin="0,0,0,8">
+            <ComboBoxItem Content="停止ボタン／アプリ・PC終了まで" Tag="0" />
+            <ComboBoxItem Content="10分" Tag="10" />
+            <ComboBoxItem Content="1時間" Tag="60" />
+            <ComboBoxItem Content="24時間" Tag="1440" />
+           </ComboBox>
+           <TextBlock Grid.Row="1" Text="PIN（任意）" VerticalAlignment="Center" Margin="0,0,8,0" />
+           <PasswordBox x:Name="SharePasswordBox" Grid.Row="1" Grid.Column="1" MaxLength="6" Padding="9,7" Background="{DynamicResource ControlBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderBrush="{DynamicResource BorderBrush}" />
+          </Grid>
+          <CheckBox x:Name="OnlineCheckBox" Content="インターネットの相手とP2P共有（Cloudflare Tunnelは接続案内のみ）" Margin="0,0,0,6" />
+          <TextBlock Text="接続候補の確認にGoogle／CloudflareのSTUNを使うため、各サービスに外部IPアドレスが見える場合があります。ファイル本体はWebRTCで端末間へ直接送信し、Cloudflare Tunnelはページと接続案内だけを運びます。TURN中継は既定で無効です。直接接続できない場合は中継へ自動切替せず失敗します。オフの場合はLocalSend互換の一時サーバーからLAN内で受け取れます。停止またはアプリ／PC終了で無効になります。PINは数字6桁です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" FontSize="12" />
+         </StackPanel>
+        </Expander>
+       </StackPanel>
+       <TextBlock Grid.Row="3" Text="URLごとの停止ボタンで個別に無効化できます。上部の停止ボタンはすべてのURLと共有サーバーを停止します。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" VerticalAlignment="Bottom" Margin="0,12,0,0" />
+      </Grid>
+     </Border>
+
+     <Border Grid.Column="2" Style="{StaticResource Card}">
+      <Grid>
+       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+       <TextBlock Text="作成したURL" Style="{StaticResource SectionTitle}" />
+       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Links}">
+         <ItemsControl.ItemTemplate>
+          <DataTemplate>
+           <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,10,0,8">
+            <StackPanel>
+             <DockPanel>
+              <Button DockPanel.Dock="Right" Content="停止" Tag="{Binding}" Click="Revoke_Click" IsEnabled="{Binding Active}" />
+              <TextBlock Text="{Binding Caption}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+             </DockPanel>
+             <DockPanel Margin="0,4">
+              <Button DockPanel.Dock="Right" Content="コピー" Tag="{Binding}" Click="CopyLink_Click" IsEnabled="{Binding Active}" />
+              <Button DockPanel.Dock="Right" Content="QR" Tag="{Binding}" Click="ShowQr_Click" IsEnabled="{Binding Active}" />
+              <Button DockPanel.Dock="Right" Content="登録コード" Tag="{Binding}" Click="CopyRegistrationCode_Click" IsEnabled="{Binding CanRegister}" />
+              <Button DockPanel.Dock="Right" Content="開く" Tag="{Binding}" Click="OpenLink_Click" IsEnabled="{Binding Active}" />
+              <TextBox Text="{Binding Url, Mode=OneWay}" IsReadOnly="True" />
+             </DockPanel>
+             <TextBlock Text="{Binding Status}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
+            </StackPanel>
+           </Border>
+          </DataTemplate>
+         </ItemsControl.ItemTemplate>
+        </ItemsControl>
+       </ScrollViewer>
+      </Grid>
+     </Border>
+    </Grid>
+
+    <Grid x:Name="HistoryPage" Visibility="Collapsed">
+     <Border Style="{StaticResource Card}">
+      <Grid>
+       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+       <DockPanel>
+        <Button DockPanel.Dock="Right" Content="履歴を消去" Click="ClearHistory_Click" Margin="8,0,0,8" />
+        <TextBlock Text="送受信の状況" Style="{StaticResource SectionTitle}" />
+       </DockPanel>
+       <Grid Grid.Row="1">
+        <TextBlock x:Name="HistoryEmptyText" Text="転送が完了すると、状態と日時がここに残ります。" Foreground="{DynamicResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+         <ItemsControl ItemsSource="{Binding Transfers}">
+          <ItemsControl.ItemTemplate>
+           <DataTemplate>
+            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="4,10">
+             <Grid>
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <DockPanel>
+               <Button DockPanel.Dock="Right" Content="キャンセル" Tag="{Binding}" Click="CancelTransfer_Click" IsEnabled="{Binding CanCancel}" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding FinishedAtText}" Foreground="{DynamicResource MutedTextBrush}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </DockPanel>
+              <ProgressBar Grid.Row="1" Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="6" Margin="0,8,0,5" />
+              <TextBlock Grid.Row="2" Text="{Binding Detail}" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" />
+             </Grid>
+            </Border>
+           </DataTemplate>
+          </ItemsControl.ItemTemplate>
+         </ItemsControl>
+        </ScrollViewer>
+       </Grid>
+      </Grid>
+     </Border>
+    </Grid>
+   </Grid>
+  </Grid>
+
+  <DockPanel Grid.Column="2" Grid.Row="1" Margin="2,10,2,0">
+   <Button x:Name="CancelOperationButton" DockPanel.Dock="Right" Content="中止" Click="CancelOperation_Click" Visibility="Collapsed" />
+   <ProgressBar x:Name="CurrentOperationProgressBar" DockPanel.Dock="Right" Width="120" Height="7" Margin="10,0,8,0" VerticalAlignment="Center" Visibility="Collapsed" />
+   <TextBlock x:Name="StatusText" Text="ファイルを選んでLocalSend対応端末へ送信できます。" Foreground="{DynamicResource MutedTextBrush}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+  </DockPanel>
+ </Grid>
+</UserControl>

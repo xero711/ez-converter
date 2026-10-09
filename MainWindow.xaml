@@ -1,0 +1,767 @@
+<Window x:Class="MediaConverter.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        xmlns:views="clr-namespace:MediaConverter.Views"
+        Title="EZ Converter"
+        Width="1120"
+        Height="720"
+        MinWidth="900"
+        MinHeight="600"
+        WindowStyle="None"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        ResizeMode="CanResize"
+        Icon="Assets/media-converter.ico"
+        StateChanged="MainWindow_StateChanged">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="52" ResizeBorderThickness="7" CornerRadius="9" GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+  </shell:WindowChrome.WindowChrome>
+
+  <Window.Resources>
+    <DataTemplate x:Key="FormatOptionTemplate">
+      <DockPanel LastChildFill="True">
+        <TextBlock DockPanel.Dock="Right"
+                   Text="{Binding Extension, StringFormat=  .{0}}"
+                   Foreground="{DynamicResource MutedTextBrush}"
+                   Margin="12,0,0,0" />
+        <TextBlock Text="{Binding DisplayName}" />
+      </DockPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Grid Background="{DynamicResource WindowBackgroundBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
+    <Border BorderThickness="0"
+            CornerRadius="9"
+            Background="{DynamicResource WindowBackgroundBrush}"
+            UseLayoutRounding="True">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="52" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource WindowBackgroundBrush}">
+          <Border Height="3"
+                  Margin="12,0"
+                  VerticalAlignment="Top"
+                  Background="{DynamicResource PrimaryBrush}"
+                  CornerRadius="2" />
+          <Grid Margin="18,3,8,0">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Border Width="30"
+                    Height="30"
+                    CornerRadius="8"
+                    Background="{DynamicResource PrimaryBrush}"
+                    VerticalAlignment="Center"
+                    Margin="0,0,11,0">
+              <TextBlock Text="EZ"
+                         Foreground="White"
+                         FontWeight="Bold"
+                         FontSize="12"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center" />
+            </Border>
+            <TextBlock Grid.Column="1"
+                       Text="EZ Converter"
+                       FontSize="14"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource TitleForegroundBrush}" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="SettingsWindowButton"
+                      Style="{StaticResource CaptionButtonStyle}"
+                      ToolTip="設定"
+                      Click="SettingsWindowButton_Click"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <TextBlock Text="&#xE713;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Center" />
+              </Button>
+              <Button x:Name="MinimizeWindowButton"
+                      Style="{StaticResource CaptionButtonStyle}"
+                      ToolTip="最小化"
+                      Click="MinimizeWindow_Click"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Path Width="14"
+                      Height="14"
+                      Data="M 1,7 L 13,7"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                      StrokeThickness="1.5"
+                      Stretch="Fill" />
+              </Button>
+              <Button x:Name="WindowStateButton"
+                      Style="{StaticResource CaptionButtonStyle}"
+                      ToolTip="最大化"
+                      Click="ToggleWindowState_Click"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Path x:Name="WindowStateGlyph"
+                      Width="14"
+                      Height="14"
+                      Data="M 1,1 H 13 V 13 H 1 Z"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                      StrokeThickness="1.4"
+                      Stretch="Fill" />
+              </Button>
+              <Button x:Name="CloseWindowButton"
+                      Style="{StaticResource CaptionCloseButtonStyle}"
+                      ToolTip="閉じる"
+                      Click="CloseWindow_Click"
+                      shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                <Path Width="14"
+                      Height="14"
+                      Data="M 1,1 L 13,13 M 13,1 L 1,13"
+                      Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"
+                      StrokeThickness="1.5"
+                      Stretch="Fill" />
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Grid>
+
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Margin="16,0,16,16">
+          <TabItem Header="ファイル">
+            <Grid Margin="8,14,8,8">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <StackPanel Grid.Row="0">
+                <TextBlock Text="ファイルを変換"
+                           FontSize="26"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TitleForegroundBrush}" />
+              </StackPanel>
+
+              <Grid Grid.Row="1" Margin="0,18,0,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="AddFilesButton"
+                        Content="＋ ファイルを追加"
+                        Style="{StaticResource PrimaryButton}"
+                        Click="SelectFiles_Click"
+                        MinHeight="42"
+                        Padding="18,10"
+                        VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                  <TextBlock x:Name="FileCountText"
+                             Text="0 件"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"
+                             Margin="8,0,12,0" />
+                  <Button x:Name="RemoveSelectedButton"
+                          Content="選択を削除"
+                          MinHeight="42"
+                          IsEnabled="False"
+                          Click="RemoveSelected_Click" />
+                  <Button x:Name="ClearFilesButton"
+                          Content="すべて削除"
+                          MinHeight="42"
+                          Click="ClearFiles_Click"
+                          Margin="0" />
+                </StackPanel>
+              </Grid>
+
+              <Grid x:Name="FilesDropArea"
+                    Grid.Row="2"
+                    AllowDrop="True"
+                    DragOver="FilesDropArea_DragOver"
+                    Drop="FilesDropArea_Drop">
+                <DataGrid x:Name="FilesGrid"
+                          ItemsSource="{Binding ItemsView}"
+                          AutoGenerateColumns="False"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          IsReadOnly="False"
+                          SelectionMode="Extended"
+                          SelectionUnit="FullRow"
+                          HeadersVisibility="Column"
+                          AlternationCount="2"
+                          RowBackground="{DynamicResource CardBackgroundBrush}"
+                          AlternatingRowBackground="{DynamicResource GridAlternateRowBrush}"
+                          GridLinesVisibility="Horizontal"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          Background="{DynamicResource ControlBackgroundBrush}"
+                          Foreground="{DynamicResource PrimaryTextBrush}"
+                          RowHeight="72"
+                          SelectionChanged="FilesGrid_SelectionChanged">
+                  <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="ファイル" Width="3.3*" IsReadOnly="True">
+                      <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                          <StackPanel VerticalAlignment="Center" Margin="5,0">
+                            <TextBlock Text="{Binding FileName}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding SourcePath}" />
+                            <TextBlock Text="{Binding SourcePath}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource MutedTextBrush}"
+                                       TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="変換後の形式" Width="2.0*">
+                      <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                          <ComboBox ItemsSource="{Binding AvailableOutputFormats}"
+                                    SelectedItem="{Binding SelectedOutputFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    ItemTemplate="{StaticResource FormatOptionTemplate}"
+                                    IsTextSearchEnabled="True"
+                                    TextSearch.TextPath="DisplayName"
+                                    MaxDropDownHeight="420"
+                                    ToolTip="変換後の形式を選択" />
+                        </DataTemplate>
+                      </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="進み具合" Width="1.7*" IsReadOnly="True">
+                      <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                          <Grid Margin="4,0">
+                            <Grid.RowDefinitions>
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                              <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="{Binding Status}"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource MutedTextBrush}" />
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding Message}"
+                                       ToolTip="{Binding Message}"
+                                       TextTrimming="CharacterEllipsis"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource MutedTextBrush}" />
+                            <ProgressBar Grid.Row="2"
+                                         Minimum="0"
+                                         Maximum="100"
+                                         Value="{Binding Progress}"
+                                         Height="8"
+                                         Margin="0,5,0,0" />
+                          </Grid>
+                        </DataTemplate>
+                      </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                  </DataGrid.Columns>
+                </DataGrid>
+
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsHitTestVisible="False">
+                  <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                          <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </StackPanel.Style>
+                  <TextBlock Text="変換するファイルはまだありません"
+                             FontSize="17"
+                             FontWeight="SemiBold"
+                             HorizontalAlignment="Center" />
+                  <TextBlock Text="ファイル一覧にドロップするか、上の「ファイルを追加」から選択してください。"
+                             Foreground="{DynamicResource MutedTextBrush}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0"
+                             HorizontalAlignment="Center" />
+                </StackPanel>
+              </Grid>
+
+              <Border Grid.Row="3"
+                      Background="{DynamicResource CardBackgroundBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="6"
+                      Padding="12"
+                      Margin="0,12,0,10">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="保存先"
+                             VerticalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Margin="0,0,12,0" />
+                  <TextBox x:Name="OutputDirectoryTextBox"
+                           Grid.Column="1"
+                           Margin="0,0,8,0" />
+                  <Button Grid.Column="2"
+                          Content="参照..."
+                          Click="BrowseOutput_Click"
+                          Margin="0" />
+                </Grid>
+              </Border>
+
+              <Grid Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock x:Name="OverallStatusText"
+                             Text="ファイルを追加して、変換を始めましょう。"
+                             Foreground="{DynamicResource MutedTextBrush}"
+                             Margin="0,6,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                  <Button x:Name="CancelButton"
+                          Content="キャンセル"
+                          IsEnabled="False"
+                          Click="Cancel_Click" />
+                  <Button x:Name="ShareConvertedButton"
+                          Content="変換済みを送る"
+                          IsEnabled="False"
+                          Click="ShareConverted_Click" />
+                  <Button x:Name="ConvertButton"
+                          Content="変換を開始"
+                          Style="{StaticResource PrimaryButton}"
+                          Click="Convert_Click"
+                          Margin="0" />
+                </StackPanel>
+              </Grid>
+
+              <!-- Search remains available to the existing collection view but is not part of the simple surface. -->
+              <TextBox x:Name="SearchFilesTextBox"
+                       Visibility="Collapsed"
+                       TextChanged="SearchFilesTextBox_TextChanged" />
+            </Grid>
+          </TabItem>
+
+          <TabItem Header="URLから保存">
+            <Grid Margin="8,14,8,8">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+
+              <StackPanel Grid.Row="0">
+                <TextBlock Text="URLから保存"
+                           FontSize="26"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TitleForegroundBrush}" />
+              </StackPanel>
+
+              <Border Grid.Row="1"
+                      Background="{DynamicResource CardBackgroundBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      Padding="16"
+                      Margin="0,18,0,12">
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="URL"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"
+                             Margin="0,0,16,0" />
+                  <TextBox x:Name="YouTubeUrlTextBox"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="2"
+                           ToolTip="保存したいURLを貼り付けてください" />
+                  <TextBlock Grid.Row="1"
+                             Text="保存先"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"
+                             Margin="0,12,16,0" />
+                  <TextBox x:Name="YouTubeOutputDirectoryTextBox"
+                           Grid.Row="1"
+                           Grid.Column="1"
+                           Margin="0,12,8,0" />
+                  <Button Grid.Row="1"
+                          Grid.Column="2"
+                          Content="参照..."
+                          Margin="0,12,0,0"
+                          Click="BrowseYouTubeOutput_Click" />
+                </Grid>
+              </Border>
+
+              <Border Grid.Row="2"
+                      Background="{DynamicResource CardBackgroundBrush}"
+                      BorderBrush="{DynamicResource BorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="8"
+                      Padding="16">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="160" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="保存するもの"
+                             VerticalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Margin="0,0,10,0" />
+                  <ComboBox x:Name="YouTubeModeCombo"
+                            Grid.Column="1"
+                            SelectedIndex="0"
+                            SelectionChanged="YouTubeModeCombo_SelectionChanged">
+                    <ComboBoxItem Content="映像" />
+                    <ComboBoxItem Content="音声" />
+                  </ComboBox>
+                  <TextBlock Grid.Column="2"
+                             Text="形式"
+                             VerticalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Margin="18,0,10,0" />
+                  <ComboBox x:Name="YouTubeFormatCombo"
+                            Grid.Column="3" />
+                  <TextBlock Grid.Column="4"
+                             Text="品質"
+                             VerticalAlignment="Center"
+                             FontWeight="SemiBold"
+                             Margin="18,0,10,0" />
+                  <ComboBox x:Name="YouTubeQualityCombo"
+                            Grid.Column="5"
+                            SelectedIndex="0" />
+                </Grid>
+              </Border>
+
+              <TextBlock Grid.Row="3"
+                         Text="公開URL、または利用する権利があるURLだけを保存してください。"
+                         TextWrapping="Wrap"
+                         Foreground="{DynamicResource MutedTextBrush}"
+                         Margin="0,12,0,0" />
+
+              <Grid Grid.Row="4" Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock x:Name="YouTubeStatusText"
+                             Text="準備完了"
+                             Foreground="{DynamicResource MutedTextBrush}"
+                             TextWrapping="Wrap"
+                             Margin="0,8,0,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Bottom">
+                  <Button x:Name="YouTubeCancelButton"
+                          Content="キャンセル"
+                          IsEnabled="False"
+                          Click="CancelYouTube_Click" />
+                  <Button x:Name="YouTubeDownloadButton"
+                          Content="保存を開始"
+                          Style="{StaticResource PrimaryButton}"
+                          Click="DownloadYouTube_Click"
+                          Margin="0" />
+                </StackPanel>
+              </Grid>
+
+              <!-- Update details and diagnostic output are intentionally kept out of the normal user surface. -->
+              <StackPanel Visibility="Collapsed">
+                <TextBlock x:Name="YouTubeDependencyText" Text="準備中" />
+                <Button x:Name="YtDlpUpdateButton" Content="更新" Click="UpdateYtDlp_Click" />
+                <TextBox x:Name="YouTubeLogTextBox" IsReadOnly="True" AcceptsReturn="True" />
+              </StackPanel>
+            </Grid>
+          </TabItem>
+
+          <TabItem x:Name="ArchiveTabItem" Header="GPU圧縮・解凍">
+            <views:ArchiveView x:Name="ArchivePanel" />
+          </TabItem>
+
+          <TabItem x:Name="SharingTabItem" Header="送る・受け取る">
+            <views:SharingView x:Name="SharingPanel" />
+          </TabItem>
+
+          <TabItem x:Name="SettingsTabItem">
+            <TabItem.Header>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE713;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="14"
+                           VerticalAlignment="Center"
+                           Margin="0,0,6,0" />
+                <TextBlock Text="設定" VerticalAlignment="Center" />
+              </StackPanel>
+            </TabItem.Header>
+            <Grid Margin="22,16,22,14">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+              </Grid.RowDefinitions>
+              <StackPanel Grid.Row="0" Margin="0,0,0,14">
+                <TextBlock Text="設定"
+                           FontSize="26"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource TitleForegroundBrush}" />
+                <TextBlock x:Name="AppVersionText"
+                           Foreground="{DynamicResource MutedTextBrush}"
+                           Margin="0,5,0,0" />
+              </StackPanel>
+              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="0,0,8,0">
+                  <TextBlock Text="自動更新"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource CardBackgroundBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="16"
+                          Margin="0,0,0,16">
+                    <Grid>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <CheckBox x:Name="CheckAppUpdatesCheckBox"
+                                Content="起動時にアプリの更新を確認する"
+                                FontWeight="SemiBold"
+                                Click="SettingsPreference_Click" />
+                      <DockPanel Grid.Row="1" Margin="0,12,0,0" LastChildFill="True">
+                        <Button x:Name="CheckForUpdatesNowButton"
+                                DockPanel.Dock="Right"
+                                Content="今すぐ確認"
+                                Click="CheckForUpdatesNowButton_Click"
+                                Margin="12,0,0,0" />
+                        <TextBlock x:Name="AppUpdateSettingsStatusText"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+                      </DockPanel>
+                      <CheckBox Grid.Row="2"
+                                x:Name="AutoUpdateMediaToolsCheckBox"
+                                Content="動画取得・変換エンジンを自動で更新する"
+                                FontWeight="SemiBold"
+                                Margin="0,16,0,0"
+                                Click="SettingsPreference_Click" />
+                      <TextBlock Grid.Row="3"
+                                 Text="yt-dlp と FFmpeg の更新を起動時と定期的に確認します。"
+                                 Foreground="{DynamicResource MutedTextBrush}"
+                                 Margin="24,5,0,0" />
+                    </Grid>
+                  </Border>
+
+                  <TextBlock Text="Windows起動時"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource CardBackgroundBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="16"
+                          Margin="0,0,0,16">
+                    <StackPanel>
+                      <CheckBox x:Name="StartWithWindowsCheckBox"
+                                Content="Windowsへのサインイン時にEZ Converterを起動する"
+                                FontWeight="SemiBold"
+                                Click="SettingsPreference_Click" />
+                      <CheckBox x:Name="StartMinimizedCheckBox"
+                                Content="Windows起動時に最小化する"
+                                Margin="0,12,0,0"
+                                Click="SettingsPreference_Click" />
+                    </StackPanel>
+                  </Border>
+
+                  <TextBlock Text="インターネット越しの接続（TURN）"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource CardBackgroundBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="16"
+                          Margin="0,0,0,16">
+                    <StackPanel>
+                      <CheckBox x:Name="EnableTurnRelayCheckBox"
+                                Content="直接接続できない場合、設定したTURNサーバーを中継に使う"
+                                FontWeight="SemiBold" />
+                      <TextBlock Text="通常は端末間で直接送ります。TURNを使う場合は、ファイルの暗号化された通信が指定したサーバーを経由します。利用には coturn 等のTURN REST共有シークレット対応サーバーが必要です。共有相手にも短期の接続資格情報が渡ります。"
+                                 Foreground="{DynamicResource MutedTextBrush}"
+                                 TextWrapping="Wrap"
+                                 Margin="24,5,0,12" />
+                      <TextBlock Text="TURNサーバーURL（例: turns:turn.example.com:5349?transport=tcp）"
+                                 Margin="0,0,0,4" />
+                      <TextBox x:Name="TurnServerUrlBox" MaxLength="512" />
+                      <TextBlock Text="共有シークレット（保存時にこのWindowsユーザーのDPAPIで暗号化）"
+                                 Margin="0,10,0,4" />
+                      <PasswordBox x:Name="TurnSharedSecretBox"
+                                   MaxLength="4096"
+                                   Padding="9,7"
+                                   Background="{DynamicResource ControlBackgroundBrush}"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   BorderBrush="{DynamicResource BorderBrush}"
+                                   BorderThickness="1" />
+                      <DockPanel Margin="0,10,0,0">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                          <Button Content="TURN設定を保存" Click="SaveTurnSettings_Click" Margin="8,0,0,0" />
+                          <Button Content="保存済みシークレットを消去" Click="ClearTurnSecret_Click" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="TurnSettingsStatusText"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+                      </DockPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <TextBlock Text="固定URLでのインターネット接続（Cloudflare Named Tunnel）"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource CardBackgroundBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="16"
+                          Margin="0,0,0,16">
+                    <StackPanel>
+                      <CheckBox x:Name="UseNamedTunnelCheckBox"
+                                Content="オンライン共有で登録済みのNamed Tunnelを使う"
+                                FontWeight="SemiBold" />
+                      <TextBlock Text="Cloudflare Zero Trustで公開ホスト名を作成し、サービスを http://127.0.0.1:53318（下のポート）に設定してください。トークンはこのWindowsユーザーのDPAPIで保護します。設定を変えた後、共有画面で受信を停止して再開してください。"
+                                 Foreground="{DynamicResource MutedTextBrush}"
+                                 TextWrapping="Wrap"
+                                 Margin="24,5,0,12" />
+                      <TextBlock Text="Cloudflareに登録した公開ホスト名（例: share.example.com）"
+                                 Margin="0,0,0,4" />
+                      <TextBox x:Name="NamedTunnelHostnameBox" MaxLength="253" />
+                      <TextBlock Text="トンネル実行トークン（保存時にこのWindowsユーザーのDPAPIで暗号化）"
+                                 Margin="0,10,0,4" />
+                      <PasswordBox x:Name="NamedTunnelTokenBox"
+                                   MaxLength="4096"
+                                   Padding="9,7"
+                                   Background="{DynamicResource ControlBackgroundBrush}"
+                                   Foreground="{DynamicResource PrimaryTextBrush}"
+                                   BorderBrush="{DynamicResource BorderBrush}"
+                                   BorderThickness="1" />
+                      <TextBlock Text="ローカル接続ポート（Cloudflareのサービス先にも同じ番号を指定）"
+                                 Margin="0,10,0,4" />
+                      <TextBox x:Name="NamedTunnelPortBox" Text="53318" MaxLength="5" />
+                      <DockPanel Margin="0,10,0,0">
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                          <Button Content="Named Tunnel設定を保存" Click="SaveNamedTunnelSettings_Click" Margin="8,0,0,0" />
+                          <Button Content="保存済みトークンを消去" Click="ClearNamedTunnelToken_Click" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="NamedTunnelSettingsStatusText"
+                                   Foreground="{DynamicResource MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   VerticalAlignment="Center" />
+                      </DockPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <TextBlock Text="エクスプローラー"
+                             FontSize="16"
+                             FontWeight="SemiBold"
+                             Margin="0,0,0,8" />
+                  <Border Background="{DynamicResource CardBackgroundBrush}"
+                          BorderBrush="{DynamicResource BorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="8"
+                          Padding="16"
+                          Margin="0,0,0,16">
+                    <StackPanel>
+                      <CheckBox x:Name="ExplorerContextMenuCheckBox"
+                                Content="右クリックにGPU圧縮・解凍を追加する"
+                                FontWeight="SemiBold"
+                                Click="SettingsPreference_Click" />
+                      <TextBlock x:Name="ExplorerContextMenuStatusText"
+                                 Text="このPCだけに追加します。Windows 11では「その他のオプションを表示」にあります。"
+                                 Foreground="{DynamicResource MutedTextBrush}"
+                                 TextWrapping="Wrap"
+                                 Margin="24,5,0,0" />
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </TabItem>
+        </TabControl>
+
+        <Border x:Name="BottomProgressSurface"
+                Grid.Row="1"
+                Height="22"
+                Margin="1"
+                VerticalAlignment="Bottom"
+                Background="{DynamicResource ControlBackgroundBrush}"
+                CornerRadius="0,0,8,8"
+                Visibility="Collapsed"
+                Panel.ZIndex="10">
+          <Grid>
+            <ProgressBar x:Name="BottomProgressBar"
+                         Minimum="0"
+                         Maximum="100"
+                         Height="7"
+                         VerticalAlignment="Bottom" />
+            <TextBlock HorizontalAlignment="Right"
+                       VerticalAlignment="Top"
+                       Margin="0,1,4,0"
+                       FontSize="10"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource MutedTextBrush}"
+                       Text="{Binding Value, ElementName=BottomProgressBar, StringFormat={}{0:0}%}">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsIndeterminate, ElementName=BottomProgressBar}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+          </Grid>
+        </Border>
+
+        <!-- Detailed engine results remain available to the automatic checks without exposing dependency folders or jargon. -->
+        <StackPanel Grid.Row="1" Visibility="Collapsed">
+          <Button Content="エンジン状態" Click="CheckDependencies_Click" />
+          <TextBlock x:Name="ImageMagickStatusText" Text="確認中..." />
+          <TextBlock x:Name="FfmpegStatusText" Text="確認中..." />
+          <TextBlock x:Name="LibreOfficeStatusText" Text="確認中..." />
+          <TextBlock x:Name="SevenZipStatusText" Text="確認中..." />
+          <TextBlock x:Name="CalibreStatusText" Text="確認中..." />
+          <TextBlock x:Name="FontForgeStatusText" Text="確認中..." />
+          <TextBlock x:Name="YtDlpStatusText" Text="確認中..." />
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

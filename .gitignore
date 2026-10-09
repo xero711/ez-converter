@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+*_wpftmp.csproj
+*.user
+*.suo
+conversion.log
+work/
+outputs/
+Tools/*
+!Tools/README.md
+!Tools/THIRD-PARTY-NOTICES.md

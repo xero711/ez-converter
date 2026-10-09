@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\..\Sharing\EZConverter.Sharing.csproj" />
+    <Compile Include="..\..\Models\AppPreferences.cs" Link="AppPreferences.cs" />
+    <Compile Include="..\..\Services\DpapiStringProtector.cs" Link="DpapiStringProtector.cs" />
+    <Compile Include="..\..\Services\AppPreferencesStore.cs" Link="AppPreferencesStore.cs" />
+    <Compile Include="..\..\Services\InvitationCodeService.cs" Link="InvitationCodeService.cs" />
+    <Compile Include="..\..\Services\InvitationContactStore.cs" Link="InvitationContactStore.cs" />
+    <Compile Remove="work\**\*.cs" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,180 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read application version from release tag
+        id: release_version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+            throw "Release tag must have the form vMAJOR.MINOR.PATCH: $env:GITHUB_REF_NAME"
+          }
+          $version = $Matches.version
+          $assemblyVersion = "$version.0"
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "assembly_version=$assemblyVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js for browser transfer checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore solution for release verification
+        run: dotnet restore .\EZConverter.sln
+
+      - name: Restore automatic update integration checks
+        run: dotnet restore .\tests\AppUpdate.Integration\AppUpdate.Integration.csproj
+
+      - name: Build solution before release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
+          RELEASE_ASSEMBLY_VERSION: ${{ steps.release_version.outputs.assembly_version }}
+        run: |
+          dotnet build .\EZConverter.sln -c Release --no-restore -p:SkipBundledTools=true "-p:Version=$env:RELEASE_VERSION" "-p:AssemblyVersion=$env:RELEASE_ASSEMBLY_VERSION" "-p:FileVersion=$env:RELEASE_ASSEMBLY_VERSION" "-p:InformationalVersion=$env:RELEASE_VERSION"
+          if ($LASTEXITCODE -ne 0) { throw "Release build failed with exit code $LASTEXITCODE" }
+          $appAssembly = (Resolve-Path .\bin\Release\net8.0-windows10.0.19041.0\MediaConverter.dll).Path
+          $actualVersion = [System.Reflection.AssemblyName]::GetAssemblyName($appAssembly).Version.ToString()
+          if ($actualVersion -ne $env:RELEASE_ASSEMBLY_VERSION) {
+            throw "Application assembly version $actualVersion does not match release tag $env:RELEASE_ASSEMBLY_VERSION"
+          }
+
+      - name: Restore sharing integration tests
+        run: dotnet restore .\tests\Sharing.Integration\Sharing.Integration.csproj
+
+      - name: Restore WPF sharing integration tests
+        run: dotnet restore .\tests\Sharing.UIIntegration\Sharing.UIIntegration.csproj
+
+      - name: Restore WebRTC browser integration tests
+        run: dotnet restore .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj
+
+      - name: Restore conversion matrix
+        run: dotnet restore .\tests\Conversion.Matrix\Conversion.Matrix.csproj
+
+      - name: Restore conversion integration checks
+        run: dotnet restore .\tests\Conversion.Integration\Conversion.Integration.csproj
+
+      - name: Restore audio conversion integration checks
+        run: dotnet restore .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj
+
+      - name: Restore video download integration checks
+        run: dotnet restore .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj
+
+      - name: Ensure WebView2 Runtime for WPF sharing tests
+        shell: pwsh
+        run: pwsh -File .\scripts\Install-WebView2RuntimeForTests.ps1
+
+      - name: Verify LocalSend and transfer integration before release
+        run: dotnet run --project .\tests\Sharing.Integration\Sharing.Integration.csproj -c Release --no-restore
+
+      - name: Verify GitHub release update and checksum flow
+        run: dotnet run --project .\tests\AppUpdate.Integration\AppUpdate.Integration.csproj -c Release --no-restore
+
+      - name: Verify WPF LAN and invitation transfers before release
+        run: dotnet run --project .\tests\Sharing.UIIntegration\Sharing.UIIntegration.csproj -c Release --no-restore
+
+      - name: Verify direct WebRTC transfers, cancellation, and resume before release
+        run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore
+
+      - name: Verify browser transfer and WebRTC safeguards before release
+        run: node .\scripts\Test-SharingBrowser.mjs
+
+      - name: Prepare bundled conversion engines
+        shell: pwsh
+        run: pwsh -File .\scripts\Prepare-BundledTools.ps1
+
+      - name: Verify conversion catalog and representative formats
+        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true
+
+      - name: Verify video conversion output and progress
+        run: dotnet run --project .\tests\Conversion.Integration\Conversion.Integration.csproj -c Release --no-restore
+
+      - name: Verify video-to-audio extraction
+        run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
+
+      - name: Verify signed direct-media URLs through yt-dlp
+        run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore
+
+      - name: Prepare GPU compression engine
+        shell: pwsh
+        run: pwsh -File .\scripts\Prepare-GpuCompression.ps1
+
+      - name: Publish application
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
+          RELEASE_ASSEMBLY_VERSION: ${{ steps.release_version.outputs.assembly_version }}
+        run: |
+          dotnet publish .\MediaConverter.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true "-p:Version=$env:RELEASE_VERSION" "-p:AssemblyVersion=$env:RELEASE_ASSEMBLY_VERSION" "-p:FileVersion=$env:RELEASE_ASSEMBLY_VERSION" "-p:InformationalVersion=$env:RELEASE_VERSION" -o .\artifacts\app
+          if ($LASTEXITCODE -ne 0) { throw "Application publish failed with exit code $LASTEXITCODE" }
+
+      - name: Verify bundled WebView2 runtime setup
+        shell: pwsh
+        run: |
+          $sourceInstaller = (Resolve-Path .\Tools\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe).Path
+          $publishedInstaller = (Resolve-Path .\artifacts\app\Tools\WebView2\MicrosoftEdgeWebView2RuntimeInstallerX64.exe).Path
+          $sourceHash = (Get-FileHash -LiteralPath $sourceInstaller -Algorithm SHA256).Hash
+          $publishedHash = (Get-FileHash -LiteralPath $publishedInstaller -Algorithm SHA256).Hash
+          if ($sourceHash -ne $publishedHash) { throw 'Published WebView2 Runtime installer differs from the verified source binary.' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $publishedInstaller
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation') {
+            throw 'Published WebView2 Runtime installer does not have a valid Microsoft signature.'
+          }
+
+      - name: Publish update agent
+        shell: pwsh
+        run: dotnet publish .\UpdateAgent\MediaConverter.UpdateAgent.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o .\artifacts\agent
+
+      - name: Add update agent and bind repository settings
+        shell: pwsh
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          Copy-Item .\artifacts\agent\MediaConverter.UpdateAgent.exe .\artifacts\app\MediaConverter.UpdateAgent.exe -Force
+          $settingsPath = (Resolve-Path .\artifacts\app\appsettings.json).Path
+          $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+          $settings.GitHub.Owner = $env:REPOSITORY_OWNER
+          $settings.GitHub.Repository = $env:REPOSITORY_NAME
+          $settings | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $settingsPath -Encoding utf8
+
+      - name: Create archive and checksum
+        shell: pwsh
+        run: |
+          $archive = Join-Path (Resolve-Path .\artifacts) 'MediaConverter-win-x64.zip'
+          $archiver = (Resolve-Path .\artifacts\app\Tools\7-Zip\7z.exe).Path
+          & $archiver a -tzip -mx=1 $archive '.\artifacts\app\*' -r
+          if ($LASTEXITCODE -ne 0) { throw "7-Zip archive creation failed with exit code $LASTEXITCODE" }
+          $archiveSize = (Get-Item -LiteralPath $archive).Length
+          if ($archiveSize -ge [long]2147483648) {
+            throw "GitHub Release assets must be smaller than 2 GiB; archive is $archiveSize bytes."
+          }
+          "Release archive: $archiveSize bytes" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          "$hash *MediaConverter-win-x64.zip" | Set-Content -LiteralPath "$archive.sha256" -Encoding ascii
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" .\artifacts\MediaConverter-win-x64.zip .\artifacts\MediaConverter-win-x64.zip.sha256 --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --generate-notes

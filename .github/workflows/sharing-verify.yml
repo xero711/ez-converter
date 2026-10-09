@@ -1,0 +1,60 @@
+name: Verify file sharing
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sharing:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Restore solution
+        run: dotnet restore .\EZConverter.sln
+
+      - name: Build solution
+        run: dotnet build .\EZConverter.sln -c Release --no-restore -p:SkipBundledTools=true
+
+      - name: Restore sharing integration tests
+        run: dotnet restore .\tests\Sharing.Integration\Sharing.Integration.csproj
+
+      - name: Restore WPF sharing integration tests
+        run: dotnet restore .\tests\Sharing.UIIntegration\Sharing.UIIntegration.csproj
+
+      - name: Restore WebRTC browser integration tests
+        run: dotnet restore .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj
+
+      - name: Ensure WebView2 Runtime for WPF sharing tests
+        shell: pwsh
+        run: pwsh -File .\scripts\Install-WebView2RuntimeForTests.ps1
+
+      - name: Verify LocalSend and transfer integration
+        run: dotnet run --project .\tests\Sharing.Integration\Sharing.Integration.csproj -c Release --no-restore
+
+      - name: Verify WPF LAN and invitation transfers
+        run: dotnet run --project .\tests\Sharing.UIIntegration\Sharing.UIIntegration.csproj -c Release --no-restore
+
+      - name: Verify direct WebRTC transfers, cancellation, and resume
+        run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore
+
+      - name: Verify browser transfer and WebRTC safeguards
+        run: node .\scripts\Test-SharingBrowser.mjs

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <InternalsVisibleTo Include="Sharing.Integration" />
+    <EmbeddedResource Include="Web\share.html" />
+    <EmbeddedResource Include="Web\invite.html" />
+    <EmbeddedResource Include="Web\host.html" />
+    <EmbeddedResource Include="Web\sha256.js" />
+    <EmbeddedResource Include="Web\ice.js" />
+    <EmbeddedResource Include="Web\transfer-window.js" />
+    <EmbeddedResource Include="Web\host.js" />
+    <EmbeddedResource Include="Web\share.js" />
+    <EmbeddedResource Include="Web\invite.js" />
+    <EmbeddedResource Include="Web\localsend.html" />
+    <EmbeddedResource Include="Web\localsend.js" />
+    <Compile Remove="work\**\*.cs" />
+  </ItemGroup>
+</Project>
