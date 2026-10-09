@@ -56,5 +56,8 @@ jobs:
       - name: Verify direct WebRTC transfers, cancellation, and resume
         run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore
 
+      - name: Verify public Quick Tunnel invitations and EZC1 registration
+        run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore -- --public-p2p
+
       - name: Verify browser transfer and WebRTC safeguards
         run: node .\scripts\Test-SharingBrowser.mjs

@@ -27,6 +27,19 @@ try
     }
     if (!File.Exists(ffmpeg) || !File.Exists(ytDlp))
         throw new FileNotFoundException("FFmpeg and yt-dlp are required for URL download verification.");
+
+    var denoUpdater = new DenoUpdateService(Path.Combine(managedTools, "deno"));
+    var denoUpdate = await denoUpdater.UpdateIfNeededAsync(force: true);
+    Require(denoUpdate.Updated && File.Exists(denoUpdater.ExecutablePath),
+        "Deno updater downloads and installs the verified official Windows runtime: " + denoUpdate.Detail);
+    var installedDeno = await ExternalToolRunner.RunAsync(
+        denoUpdater.ExecutablePath, ["--version"], CancellationToken.None, root);
+    Require(installedDeno.ExitCode == 0 && installedDeno.StandardOutput.Contains(denoUpdate.Version, StringComparison.Ordinal),
+        "installed Deno reports the official release version");
+    var cachedDenoUpdate = await denoUpdater.UpdateIfNeededAsync(force: false);
+    Require(cachedDenoUpdate.Skipped, "Deno updater uses its verified 12-hour check state");
+    Pass("official Deno asset download, SHA-256, executable version, and 12-hour update cache are verified");
+
     var mediaRoot = Path.Combine(root, "media");
     Directory.CreateDirectory(mediaRoot);
     var fixturePath = Path.Combine(mediaRoot, "synthetic media.mp4");
@@ -64,6 +77,21 @@ try
         ?? throw new MissingMethodException("The URL download argument builder is missing.");
     var urlValidator = typeof(MainWindow).GetMethod("IsSupportedMediaUrl", BindingFlags.NonPublic | BindingFlags.Static)
         ?? throw new MissingMethodException("The URL download validator is missing.");
+    var urlNormalizer = typeof(MainWindow).GetMethod("NormalizeMediaUrl", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new MissingMethodException("The URL download normalizer is missing.");
+    foreach (var (input, expected) in new[]
+    {
+        ("www.youtube.com/watch?v=EZCtest1234", "https://www.youtube.com/watch?v=EZCtest1234"),
+        ("//youtu.be/EZCtest1234?t=1", "https://youtu.be/EZCtest1234?t=1"),
+        ("  media.example.invalid/manifest.mpd?token=local-test  ", "https://media.example.invalid/manifest.mpd?token=local-test"),
+        ("http://media.example.invalid/video.mp4?signature=local-test", "http://media.example.invalid/video.mp4?signature=local-test")
+    })
+    {
+        var normalized = urlNormalizer.Invoke(null, [input]) as string;
+        Require(normalized == expected, $"URL input normalizes safely: {input}");
+    }
+    Pass("scheme-less, protocol-relative, and whitespace-padded URLs normalize to valid HTTP(S) URLs");
+
     var urlForms = new[]
     {
         "https://www.youtube.com/watch?v=EZCtest1234",

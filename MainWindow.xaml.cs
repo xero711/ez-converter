@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private readonly DependencyChecker _dependencyChecker = new();
     private readonly ConversionService _conversionService = new();
     private readonly YtDlpUpdateService _ytDlpUpdateService = new();
+    private readonly DenoUpdateService _denoUpdateService = new();
     private readonly FfmpegUpdateService _ffmpegUpdateService = new();
     private readonly AppUpdateService _appUpdateService = new();
     private readonly string _logFilePath;
@@ -164,6 +165,7 @@ public partial class MainWindow : Window
                     if (_youtubeCancellation is null && _conversionCancellation is null)
                     {
                         await UpdateYtDlpAsync(force: false, showError: false);
+                        await UpdateDenoAsync(force: false, showError: false);
                         await UpdateFfmpegAsync(force: false);
                     }
                 }
@@ -466,6 +468,7 @@ public partial class MainWindow : Window
         if (_appPreferences.AutoUpdateMediaTools)
         {
             await UpdateYtDlpAsync(force: false, showError: false);
+            await UpdateDenoAsync(force: false, showError: false);
             await UpdateFfmpegAsync(force: false);
             _ytDlpUpdateTimer.Start();
         }
@@ -483,6 +486,7 @@ public partial class MainWindow : Window
             && _conversionCancellation is null)
         {
             await UpdateYtDlpAsync(force: false, showError: false);
+            await UpdateDenoAsync(force: false, showError: false);
             await UpdateFfmpegAsync(force: false);
         }
     }
@@ -731,6 +735,36 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task UpdateDenoAsync(bool force, bool showError, bool allowDuringDownload = false)
+    {
+        if (_youtubeCancellation is not null && !allowDuringDownload)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _denoUpdateService.UpdateIfNeededAsync(force);
+            YouTubeDependencyText.Text = result.Detail;
+            AppendYouTubeLog($"[Deno] {result.Detail}");
+        }
+        catch (Exception exception)
+        {
+            var fallbackPath = ToolLocator.FindDeno();
+            var message = fallbackPath is null
+                ? $"YouTubeなどのJavaScript抽出に必要なDenoを自動取得できませんでした。インターネット接続を確認してください。\n{exception.Message}"
+                : $"Denoの更新を確認できませんでした。現在の実行環境を継続使用します。\n{exception.Message}";
+            YouTubeDependencyText.Text = fallbackPath is null ? "Denoの自動取得に失敗" : "Deno更新確認に失敗。既存版を使用中";
+            AppendYouTubeLog($"[Deno更新エラー] {message}");
+            if (showError)
+            {
+                MessageBox.Show(this, message, "Deno更新", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        await CheckDependenciesAsync(showMessage: false);
+    }
+
     private async void DownloadYouTube_Click(object sender, RoutedEventArgs e)
     {
         if (_youtubeCancellation is not null)
@@ -738,12 +772,13 @@ public partial class MainWindow : Window
             return;
         }
 
-        var url = YouTubeUrlTextBox.Text.Trim();
-        if (!IsSupportedMediaUrl(url))
+        var url = NormalizeMediaUrl(YouTubeUrlTextBox.Text);
+        if (url is null)
         {
-            MessageBox.Show(this, "http:// または https:// で始まるURLを入力してください。", "URLから保存", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "動画ページ、埋め込み、またはメディアのHTTP(S) URLを入力してください。", "URLから保存", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
+        YouTubeUrlTextBox.Text = url;
 
         var outputDirectory = YouTubeOutputDirectoryTextBox.Text.Trim();
         var format = YouTubeFormatCombo.SelectedItem?.ToString();
@@ -785,6 +820,11 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("URLの保存に必要な機能を準備できませんでした。インターネット接続を確認して、もう一度お試しください。");
             }
 
+            if (ToolLocator.FindDeno() is null)
+            {
+                await UpdateDenoAsync(force: false, showError: false, allowDuringDownload: true);
+            }
+
             var ffmpegPath = _toolPaths.TryGetValue(ConversionBackend.Ffmpeg, out var cachedFfmpegPath)
                 ? cachedFfmpegPath
                 : ToolLocator.FindFfmpeg();
@@ -809,7 +849,7 @@ public partial class MainWindow : Window
 
             _youtubeCancellation.Token.ThrowIfCancellationRequested();
             var arguments = BuildMediaArguments(url, outputDirectory, format, quality, isAudio, ffmpegPath);
-            YouTubeStatusText.Text = "保存中...";
+            YouTubeStatusText.Text = "ページ内の動画を解析して保存しています...";
             AppendYouTubeLog($"[開始] {SanitizeUrlForLog(url)} -> {format}");
             var result = await ExternalToolRunner.RunAsync(ytDlpPath, arguments, _youtubeCancellation.Token);
             AppendYouTubeLog(result.StandardOutput);
@@ -879,6 +919,11 @@ public partial class MainWindow : Window
             "-o", "%(title)s.%(ext)s"
         };
 
+        if (ToolLocator.FindDeno() is { } denoPath)
+        {
+            arguments.AddRange(["--js-runtimes", $"deno:{Path.GetFullPath(denoPath)}"]);
+        }
+
         if (isAudio)
         {
             arguments.AddRange(["-x", "--audio-format", format, "--audio-quality", quality == "最高品質" ? "0" : quality]);
@@ -915,13 +960,32 @@ public partial class MainWindow : Window
         YtDlpUpdateButton.IsEnabled = !busy;
     }
 
-    private static bool IsSupportedMediaUrl(string url)
+    private static string? NormalizeMediaUrl(string input)
     {
+        var url = input.Trim();
+        if (url.Length == 0 || url.Any(char.IsWhiteSpace))
+        {
+            return null;
+        }
+
+        if (url.StartsWith("//", StringComparison.Ordinal))
+        {
+            url = "https:" + url;
+        }
+        else if (!url.Contains("://", StringComparison.Ordinal))
+        {
+            url = "https://" + url;
+        }
+
         return Uri.TryCreate(url, UriKind.Absolute, out var uri)
             && uri.Scheme is "http" or "https"
             && string.IsNullOrWhiteSpace(uri.UserInfo)
-            && !string.IsNullOrWhiteSpace(uri.Host);
+            && !string.IsNullOrWhiteSpace(uri.Host)
+                ? url
+                : null;
     }
+
+    private static bool IsSupportedMediaUrl(string url) => NormalizeMediaUrl(url) is not null;
 
     private static string FormatDownloadError(ToolRunResult result, string url)
     {
@@ -936,6 +1000,8 @@ public partial class MainWindow : Window
         var lower = output.ToLowerInvariant();
         var explanation = lower.Contains("private") || lower.Contains("login") || lower.Contains("sign in") || lower.Contains("authentication")
             ? "非公開または認証が必要なコンテンツは取得できません。"
+            : lower.Contains("javascript runtime") || lower.Contains("no supported javascript")
+                ? "動画サイトの解析に必要なJavaScript実行環境を準備できませんでした。ネット接続を確認してDenoを更新してください。"
             : lower.Contains("expired") || lower.Contains("403") || lower.Contains("forbidden") || lower.Contains("not found")
                 ? "URLが期限切れ、無効、またはアクセス権のない可能性があります。"
                 : lower.Contains("drm") || lower.Contains("encrypted")
@@ -1064,7 +1130,10 @@ public partial class MainWindow : Window
             _toolPaths.Clear();
             foreach (var result in results)
             {
-                _toolPaths[GetBackend(result.Name)] = result.IsAvailable ? result.Path : null;
+                if (result.Name != "Deno")
+                {
+                    _toolPaths[GetBackend(result.Name)] = result.IsAvailable ? result.Path : null;
+                }
                 UpdateToolStatus(result);
             }
 
@@ -1293,6 +1362,7 @@ public partial class MainWindow : Window
             "Calibre" => CalibreStatusText,
             "FontForge" => FontForgeStatusText,
             "yt-dlp" => YtDlpStatusText,
+            "Deno" => DenoStatusText,
             _ => null
         };
 

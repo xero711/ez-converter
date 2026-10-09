@@ -6,6 +6,8 @@ on:
       - '**'
     paths:
       - 'MediaConverter.csproj'
+      - 'MainWindow.xaml'
+      - 'MainWindow.xaml.cs'
       - 'Models/**'
       - 'Services/**'
       - 'Sharing/**'
@@ -13,11 +15,14 @@ on:
       - 'tests/Conversion.Matrix/**'
       - 'tests/Conversion.Integration/**'
       - 'tests/Conversion.AudioIntegration/**'
+      - 'tests/VideoDownload.Integration/**'
       - 'scripts/Prepare-BundledTools.ps1'
       - '.github/workflows/conversion-verify.yml'
   pull_request:
     paths:
       - 'MediaConverter.csproj'
+      - 'MainWindow.xaml'
+      - 'MainWindow.xaml.cs'
       - 'Models/**'
       - 'Services/**'
       - 'Sharing/**'
@@ -25,6 +30,7 @@ on:
       - 'tests/Conversion.Matrix/**'
       - 'tests/Conversion.Integration/**'
       - 'tests/Conversion.AudioIntegration/**'
+      - 'tests/VideoDownload.Integration/**'
       - 'scripts/Prepare-BundledTools.ps1'
       - '.github/workflows/conversion-verify.yml'
   workflow_dispatch:
@@ -54,6 +60,9 @@ jobs:
       - name: Restore audio conversion integration
         run: dotnet restore .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj
 
+      - name: Restore video download integration
+        run: dotnet restore .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj
+
       - name: Prepare verified conversion engines
         shell: pwsh
         run: pwsh -File .\scripts\Prepare-BundledTools.ps1
@@ -66,3 +75,6 @@ jobs:
 
       - name: Verify video-to-audio conversion integration
         run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
+
+      - name: Verify flexible video URLs and Deno updater
+        run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore
