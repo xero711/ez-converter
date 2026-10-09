@@ -733,7 +733,7 @@ internal static class Program
         {
             var allKindsDetected = expectedMediaKinds.All(expected =>
                 probe.MediaCandidates.Any(media => media.Url == expected.Key && media.Kind == expected.Value));
-            if (allKindsDetected)
+            if (allKindsDetected && probe.FindName("SaveMediaButton") is Button readinessButton && readinessButton.IsEnabled)
             {
                 detectedAt ??= DateTime.UtcNow;
                 if (DateTime.UtcNow - detectedAt.Value >= TimeSpan.FromMilliseconds(750) &&
@@ -771,7 +771,13 @@ internal static class Program
                 !detectedMedia.Values.Any(media => media.DisplayName.Contains("clip.webm", StringComparison.Ordinal)) ||
                 selected.Url != expectedSelectedUrl || selected.Kind != "動画ファイル" || selected.PageUrl != pageUrl ||
                 string.IsNullOrWhiteSpace(selected.UserAgent))
-                throw new InvalidDataException("The WebView2 candidates did not preserve all signed media URLs, types, distinct file names, page URL, and browser user agent.");
+            {
+                var candidates = string.Join(" | ", detectedMedia.Values.Select(media =>
+                    $"{media.Kind}:{media.DisplayName}:{media.Url}"));
+                throw new InvalidDataException(
+                    $"The WebView2 candidates did not preserve all signed media URLs, types, distinct file names, page URL, and browser user agent. " +
+                    $"Candidates=[{candidates}], selected={selected.Url}, page={selected.PageUrl}, userAgentPresent={!string.IsNullOrWhiteSpace(selected.UserAgent)}.");
+            }
             Console.WriteLine("PASS isolated WebView2 discovers signed MP4, WebM, HLS, and DASH URLs and selects a candidate with its page and user agent");
         }
         finally

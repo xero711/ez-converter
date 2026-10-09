@@ -98,6 +98,7 @@ public sealed partial class VideoPageProbeWindow : Window
             core.DownloadStarting += (_, args) => args.Cancel = true;
             core.NavigationStarting += (_, args) =>
             {
+                _navigationCompleted = false;
                 if (!Uri.TryCreate(args.Uri, UriKind.Absolute, out var target) ||
                     !IsHttpUri(target))
                 {
@@ -105,12 +106,18 @@ public sealed partial class VideoPageProbeWindow : Window
                 }
             };
             core.WebResourceResponseReceived += OnWebResourceResponseReceived;
-            core.NavigationCompleted += (_, args) =>
+            core.NavigationCompleted += async (_, args) =>
             {
-                _navigationCompleted = args.IsSuccess;
-                _status.Text = args.IsSuccess
-                    ? "ページを開きました。必要ならプレイヤーを再生してください。検出された動画は下に表示されます。"
-                    : "ページを読み込めませんでした。URLと公開範囲を確認してください。";
+                if (!args.IsSuccess)
+                {
+                    _navigationCompleted = false;
+                    _status.Text = "ページを読み込めませんでした。URLと公開範囲を確認してください。";
+                    return;
+                }
+
+                await CaptureUserAgentAsync(core);
+                _navigationCompleted = !_wasClosed;
+                _status.Text = "ページを開きました。必要ならプレイヤーを再生してください。検出された動画は下に表示されます。";
             };
             core.Navigate(_pageUri.AbsoluteUri);
             _scanTimer.Start();
@@ -169,8 +176,7 @@ public sealed partial class VideoPageProbeWindow : Window
 
             if (string.IsNullOrWhiteSpace(_userAgent))
             {
-                var userAgentJson = await _browser.CoreWebView2.ExecuteScriptAsync("navigator.userAgent");
-                _userAgent = JsonSerializer.Deserialize<string>(userAgentJson) ?? string.Empty;
+                await CaptureUserAgentAsync(_browser.CoreWebView2);
             }
         }
         catch (Exception)
@@ -233,7 +239,28 @@ public sealed partial class VideoPageProbeWindow : Window
 
     private void MediaList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        _saveButton.IsEnabled = _mediaList.SelectedItem is DetectedPageMedia;
+        UpdateSaveButtonState();
+    }
+
+    private async Task CaptureUserAgentAsync(CoreWebView2 core)
+    {
+        try
+        {
+            var userAgentJson = await core.ExecuteScriptAsync("navigator.userAgent");
+            _userAgent = JsonSerializer.Deserialize<string>(userAgentJson) ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            // A later scan tick can retry if navigation is still settling.
+        }
+
+        UpdateSaveButtonState();
+    }
+
+    private void UpdateSaveButtonState()
+    {
+        _saveButton.IsEnabled = _mediaList.SelectedItem is DetectedPageMedia &&
+            !string.IsNullOrWhiteSpace(_userAgent);
     }
 
     private static string? ClassifyMedia(Uri uri, string? contentType)
@@ -278,7 +305,7 @@ public sealed partial class VideoPageProbeWindow : Window
 
     private void SaveSelectedMedia(object sender, RoutedEventArgs e)
     {
-        if (_mediaList.SelectedItem is not DetectedPageMedia selected)
+        if (_mediaList.SelectedItem is not DetectedPageMedia selected || string.IsNullOrWhiteSpace(_userAgent))
         {
             return;
         }
