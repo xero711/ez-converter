@@ -223,7 +223,7 @@ dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegra
 
 `VideoDownload.Integration` はYouTubeの通常・短縮・埋め込み・Shorts URL、Vimeoの通常・埋め込みURL、HLS、DASH、署名付きHTTP(S)メディアURLが取得引数として保たれることと、FTP・file・javascriptスキームおよびURL内の認証情報を拒否することを確認します。署名付きの合成MP4と合成HLSストリームをローカルHTTPサーバーからyt-dlpで実際に取得し、FFmpegで再生可能性を検証します。第三者サイトのページURLは形式と引数保持の検証であり、ライブ取得テストではありません。サイト側の仕様変更やアクセス制限まで保証するものではありません。
 
-`Sharing.UIIntegration` は本体のWPF `SharingView` を起動し、画面操作でLAN共有URLを作成、LocalSend形式で合成ファイルを取得、停止後に送信元リスナーが閉じることを確認します。
+`Sharing.UIIntegration` は本体のWPF `SharingView` を起動し、画面操作でLAN共有URLを作成、LocalSend形式で合成ファイルを取得、停止後に送信元リスナーが閉じることを確認します。隔離WebView2によるページ内候補検出はローカルの合成ページでMP4、WebM、HLS、DASHを列挙し、署名クエリを保った候補選択、表示名の識別、ページURLとUser-Agentの引き渡しを検証します。
 
     dotnet run --project .\tests\Sharing.UIIntegration\Sharing.UIIntegration.csproj -c Release -- --public-p2p
 

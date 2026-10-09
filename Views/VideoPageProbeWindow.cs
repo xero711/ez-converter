@@ -200,7 +200,7 @@ public sealed partial class VideoPageProbeWindow : Window
 
         var candidate = new DetectedPageMedia(uri.AbsoluteUri, kind, _pageUri.GetLeftPart(UriPartial.Path), _userAgent)
         {
-            DisplayName = $"候補 {_media.Count + 1} · {kind} · {uri.IdnHost}"
+            DisplayName = $"候補 {_media.Count + 1} · {kind} · {GetDisplayResourceName(uri)}"
         };
         _media.Add(candidate);
         if (_mediaList.SelectedItem is null)
@@ -209,6 +209,26 @@ public sealed partial class VideoPageProbeWindow : Window
         }
 
         _status.Text = $"動画候補を{_media.Count}件検出しました。保存する動画を選んでください。";
+    }
+
+    private static string GetDisplayResourceName(Uri uri)
+    {
+        var resourceName = uri.Segments.LastOrDefault()?.Trim('/');
+        if (string.IsNullOrWhiteSpace(resourceName))
+        {
+            return uri.IdnHost;
+        }
+
+        try { resourceName = Uri.UnescapeDataString(resourceName); }
+        catch (UriFormatException) { }
+
+        resourceName = new string(resourceName.Select(character => char.IsControl(character) ? ' ' : character).ToArray()).Trim();
+        if (resourceName.Length > 48)
+        {
+            resourceName = resourceName[..45] + "…";
+        }
+
+        return string.IsNullOrWhiteSpace(resourceName) ? uri.IdnHost : resourceName;
     }
 
     private void MediaList_SelectionChanged(object sender, SelectionChangedEventArgs e)

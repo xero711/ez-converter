@@ -677,14 +677,30 @@ internal static class Program
                 catch (System.Net.HttpListenerException) { return; }
                 catch (ObjectDisposedException) { return; }
 
-                var isPage = context.Request.Url?.AbsolutePath == "/watch";
+                var path = context.Request.Url?.AbsolutePath;
+                var isPage = path == "/watch";
+                var contentType = path switch
+                {
+                    "/clip.mp4" => "video/mp4",
+                    "/clip.webm" => "video/webm",
+                    "/master.m3u8" => "application/vnd.apple.mpegurl",
+                    "/manifest.mpd" => "application/dash+xml",
+                    _ => null
+                };
                 var bytes = isPage
-                    ? Encoding.UTF8.GetBytes("<!doctype html><html><body><video controls src='/clip.mp4?signature=fixture'></video></body></html>")
-                    : [0, 0, 0, 0];
-                context.Response.StatusCode = isPage || context.Request.Url?.AbsolutePath == "/clip.mp4"
+                    ? Encoding.UTF8.GetBytes("<!doctype html><html><body><video controls src='/clip.mp4?signature=fixture'></video><video controls src='/clip.webm?signature=fixture'></video><video controls src='/master.m3u8?signature=fixture'></video><video controls src='/manifest.mpd?signature=fixture'></video></body></html>")
+                    : path switch
+                    {
+                        "/clip.mp4" => [0, 0, 0, 0],
+                        "/clip.webm" => [0x1a, 0x45, 0xdf, 0xa3],
+                        "/master.m3u8" => Encoding.UTF8.GetBytes("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n"),
+                        "/manifest.mpd" => Encoding.UTF8.GetBytes("<MPD xmlns='urn:mpeg:dash:schema:mpd:2011' type='static' mediaPresentationDuration='PT1S' minBufferTime='PT1S'/>"),
+                        _ => []
+                    };
+                context.Response.StatusCode = isPage || contentType is not null
                     ? (int)System.Net.HttpStatusCode.OK
                     : (int)System.Net.HttpStatusCode.NotFound;
-                context.Response.ContentType = isPage ? "text/html; charset=utf-8" : "video/mp4";
+                context.Response.ContentType = isPage ? "text/html; charset=utf-8" : contentType ?? "application/octet-stream";
                 context.Response.ContentLength64 = bytes.Length;
                 try { await context.Response.OutputStream.WriteAsync(bytes); }
                 catch (System.Net.HttpListenerException) { }
@@ -693,7 +709,14 @@ internal static class Program
         });
 
         var pageUrl = new Uri(origin, "watch").AbsoluteUri;
-        var expectedMediaUrl = new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri;
+        var expectedMediaKinds = new Dictionary<string, string>
+        {
+            [new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri] = "動画ファイル",
+            [new Uri(origin, "clip.webm?signature=fixture").AbsoluteUri] = "動画ファイル",
+            [new Uri(origin, "master.m3u8?signature=fixture").AbsoluteUri] = "HLSプレイリスト",
+            [new Uri(origin, "manifest.mpd?signature=fixture").AbsoluteUri] = "DASHプレイリスト"
+        };
+        var expectedSelectedUrl = new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri;
         var probe = new VideoPageProbeWindow(pageUrl)
         {
             Owner = owner,
@@ -708,14 +731,16 @@ internal static class Program
         var selectionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         selectionTimer.Tick += (_, _) =>
         {
-            var candidate = probe.MediaCandidates.FirstOrDefault(media => media.Url == expectedMediaUrl);
-            if (candidate is not null)
+            var allKindsDetected = expectedMediaKinds.All(expected =>
+                probe.MediaCandidates.Any(media => media.Url == expected.Key && media.Kind == expected.Value));
+            if (allKindsDetected)
             {
                 detectedAt ??= DateTime.UtcNow;
                 if (DateTime.UtcNow - detectedAt.Value >= TimeSpan.FromMilliseconds(750) &&
                     probe.FindName("MediaList") is ListBox list &&
                     probe.FindName("SaveMediaButton") is Button saveButton)
                 {
+                    var candidate = probe.MediaCandidates.Single(media => media.Url == expectedSelectedUrl);
                     list.SelectedItem = candidate;
                     saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                     selectionTimer.Stop();
@@ -735,14 +760,19 @@ internal static class Program
         {
             _ = probe.ShowDialog();
             if (timedOut)
-                throw new TimeoutException("The isolated WebView2 did not detect and select the public synthetic MP4 URL.");
+                throw new TimeoutException("The isolated WebView2 did not detect the synthetic MP4, WebM, HLS, and DASH URLs.");
 
             var selected = probe.SelectedMedia
                 ?? throw new InvalidOperationException("The WebView2 candidate selection did not return a media URL.");
-            if (selected.Url != expectedMediaUrl || selected.Kind != "動画ファイル" || selected.PageUrl != pageUrl ||
+            var detectedMedia = probe.MediaCandidates.ToDictionary(media => media.Url, StringComparer.Ordinal);
+            if (expectedMediaKinds.Any(expected => !detectedMedia.TryGetValue(expected.Key, out var media) || media.Kind != expected.Value) ||
+                detectedMedia.Values.Select(media => media.DisplayName).Distinct(StringComparer.Ordinal).Count() != expectedMediaKinds.Count ||
+                !detectedMedia.Values.Any(media => media.DisplayName.Contains("clip.mp4", StringComparison.Ordinal)) ||
+                !detectedMedia.Values.Any(media => media.DisplayName.Contains("clip.webm", StringComparison.Ordinal)) ||
+                selected.Url != expectedSelectedUrl || selected.Kind != "動画ファイル" || selected.PageUrl != pageUrl ||
                 string.IsNullOrWhiteSpace(selected.UserAgent))
-                throw new InvalidDataException("The WebView2 candidate did not preserve its signed URL, page referer, media kind, and browser user agent.");
-            Console.WriteLine("PASS isolated WebView2 discovers and selects a signed synthetic MP4 URL with its page and user agent");
+                throw new InvalidDataException("The WebView2 candidates did not preserve all signed media URLs, types, distinct file names, page URL, and browser user agent.");
+            Console.WriteLine("PASS isolated WebView2 discovers signed MP4, WebM, HLS, and DASH URLs and selects a candidate with its page and user agent");
         }
         finally
         {
