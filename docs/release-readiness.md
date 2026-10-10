@@ -1,7 +1,7 @@
 # リリース準備状況
 
 - 確認日: 2026-10-10
-- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。PR #1の最新コミット`4349491`に対する[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38024211167)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38024211151)が両方成功しました。別PC・別回線での受け入れ確認と実Named Tunnel試験は残っています。残存するビルド出力・IDE索引は可逆NTFS圧縮で格納量を約6.62 GiB減らし、D:空き容量は約550.85 GiBになりました。再帰削除は自動レビューに拒否されたため、ファイルは保持しています。
+- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。PR #1の最新コミット`5af560b`に対する[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38026414782)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38026414783)が両方成功しました。2026-10-10の全出力スイープ186経路と8,003ルート照合もこの作業ツリーで成功しました。AppUpdate.Integrationは12項目合格し、公開v1.0.6 ZIP（1,343,542,303 bytes）を取得してSHA-256 173ea61efa32c818a578183db895872580ca75435c8caf771ec3f1f57089fb1eを照合しました。別PC・別回線での受け入れ確認と実Named Tunnel試験は残っています。スマートフォンの別回線試験はユーザーが後日実施予定です。残存するビルド出力・IDE索引は可逆NTFS圧縮で格納量を約6.62 GiB減らし、D:空き容量は約550.75 GiBになりました。再帰削除は自動レビューに拒否されたため、ファイルは保持しています。
 
 ## 要件別の現在地
 
