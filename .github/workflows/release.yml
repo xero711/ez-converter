@@ -115,6 +115,8 @@ jobs:
         run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
 
       - name: Verify signed direct-media URLs through yt-dlp
+        env:
+          EZCONVERTER_GITHUB_TOKEN: ${{ github.token }}
         run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore
 
       - name: Prepare GPU compression engine

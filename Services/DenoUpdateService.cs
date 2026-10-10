@@ -57,8 +57,7 @@ public sealed class DenoUpdateService
             }
 
             using var releaseRequest = new HttpRequestMessage(HttpMethod.Get, ReleaseApiUrl);
-            releaseRequest.Headers.UserAgent.ParseAdd("EZConverter/1.0 (Deno updater)");
-            releaseRequest.Headers.Accept.ParseAdd("application/vnd.github+json");
+            GitHubReleaseRequests.Configure(releaseRequest, "EZConverter/1.0 (Deno updater)");
             using var releaseResponse = await HttpClient.SendAsync(
                 releaseRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             releaseResponse.EnsureSuccessStatusCode();

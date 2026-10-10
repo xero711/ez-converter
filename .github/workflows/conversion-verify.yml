@@ -79,4 +79,6 @@ jobs:
         run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
 
       - name: Verify flexible video URLs and Deno updater
+        env:
+          EZCONVERTER_GITHUB_TOKEN: ${{ github.token }}
         run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore

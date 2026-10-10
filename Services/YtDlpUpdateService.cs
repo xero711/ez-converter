@@ -51,8 +51,7 @@ public sealed class YtDlpUpdateService
             }
 
             using var releaseRequest = new HttpRequestMessage(HttpMethod.Get, ReleaseApiUrl);
-            releaseRequest.Headers.UserAgent.ParseAdd("EZConverter/1.0 (yt-dlp updater)");
-            releaseRequest.Headers.Accept.ParseAdd("application/vnd.github+json");
+            GitHubReleaseRequests.Configure(releaseRequest, "EZConverter/1.0 (yt-dlp updater)");
             using var releaseResponse = await HttpClient.SendAsync(
                 releaseRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             releaseResponse.EnsureSuccessStatusCode();
