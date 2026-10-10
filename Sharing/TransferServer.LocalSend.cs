@@ -9,6 +9,7 @@ namespace EZConverter.Sharing;
 
 public sealed partial class TransferServer
 {
+    private const long LocalSendPrepareUploadBodyLimit = 16L * 1024 * 1024;
     private const long LocalSendChunkedBodyOverheadLimit = 1024 * 1024;
 
     private sealed class LocalSendUploadFile(LocalSendFileMetadata metadata, string safeName, string token, TransferFile displayFile)
@@ -93,9 +94,9 @@ public sealed partial class TransferServer
 
         if (_localSendUploads.Values.Count(item => item.State is "pending" or "accepted") >= 8 || _localSendUploads.Count >= 128)
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-        if (context.Request.ContentLength is > 2 * 1024 * 1024) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        if (context.Request.ContentLength is > LocalSendPrepareUploadBodyLimit) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         var bodyLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (bodyLimit is { IsReadOnly: false }) bodyLimit.MaxRequestBodySize = 2 * 1024 * 1024;
+        if (bodyLimit is { IsReadOnly: false }) bodyLimit.MaxRequestBodySize = LocalSendPrepareUploadBodyLimit;
 
         LocalSendPrepareUploadRequest? request;
         try { request = await context.Request.ReadFromJsonAsync<LocalSendPrepareUploadRequest>(context.RequestAborted); }

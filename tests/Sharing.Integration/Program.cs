@@ -839,6 +839,31 @@ using (var externalPrepare = await http.PostAsync(local + "/api/localsend/v2/pre
     Assert((await File.ReadAllBytesAsync(Path.Combine(externalFolder, "External Project", "nested", "external-localsend-fixture.bin"))).SequenceEqual(externalPayload),
         "independent LocalSend folder upload preserves nested paths and verifies SHA-256");
 }
+await Task.Delay(TimeSpan.FromMilliseconds(1100));
+var largePreviewJson = JsonSerializer.Serialize(new
+{
+    info = new { alias = "LocalSend large-preview client", version = "2.0", deviceModel = "Linux", deviceType = "desktop",
+        fingerprint = "large-preview-fingerprint", port = 53317, protocol = "http", download = false },
+    files = new Dictionary<string, object>
+    {
+        ["previewed-file-id"] = new { id = "previewed-file-id", fileName = "previewed.bin", size = 0,
+            fileType = "application/octet-stream", sha256 = Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())),
+            preview = new string('A', 3 * 1024 * 1024) }
+    }
+}, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+using (var largePreviewPrepare = await http.PostAsync(local + "/api/localsend/v2/prepare-upload",
+    new StringContent(largePreviewJson, Encoding.UTF8, "application/json")))
+{
+    Assert(largePreviewPrepare.IsSuccessStatusCode,
+        $"LocalSend receiver accepts optional multi-megabyte preview metadata (HTTP {(int)largePreviewPrepare.StatusCode})");
+    using var receiptJson = JsonDocument.Parse(await largePreviewPrepare.Content.ReadAsStringAsync());
+    var sessionId = receiptJson.RootElement.GetProperty("sessionId").GetString()!;
+    Assert(receiptJson.RootElement.GetProperty("files").TryGetProperty("previewed-file-id", out _),
+        "LocalSend receiver skips unused preview data without dropping the file token");
+    using var cancelledPreview = await http.PostAsync(local + "/api/localsend/v2/cancel?sessionId=" + Uri.EscapeDataString(sessionId), null);
+    Assert(cancelledPreview.StatusCode == HttpStatusCode.NoContent,
+        "LocalSend large-preview metadata session can be cancelled without retaining its preview");
+}
 var directUrl = $"https://127.0.0.1:{server.HttpsPort}/#{server.Fingerprint}";
 using (var sender = await TransferClient.ConnectAsync(directUrl)) await sender.SendAsync(files, "Integration Sender", null, CancellationToken.None);
 var directFolder = Directory.GetDirectories(receive).Single(d => Path.GetFileName(d).StartsWith("EZ-"));

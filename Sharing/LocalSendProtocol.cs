@@ -24,7 +24,10 @@ public sealed record LocalSendFileMetadata(
     [property: JsonPropertyName("size")] long Size,
     [property: JsonPropertyName("fileType")] string FileType,
     [property: JsonPropertyName("sha256")] string? Sha256,
-    [property: JsonPropertyName("preview")] string? Preview = null,
+    // LocalSend preview data is optional, unused here, and may be large (for
+    // example, a Base64 image thumbnail). Ignore it during both serialization
+    // and deserialization instead of retaining untrusted preview strings.
+    [property: JsonPropertyName("preview"), JsonIgnore(Condition = JsonIgnoreCondition.Always)] string? Preview = null,
     [property: JsonPropertyName("metadata")] LocalSendFileMetadataTimes? Metadata = null);
 
 public sealed record LocalSendFileMetadataTimes(
