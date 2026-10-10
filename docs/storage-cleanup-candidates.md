@@ -124,3 +124,13 @@
 | `work/live-localsend-discovery/3c835ad89a3047e9932a20124905d4de/state/localsend-identity.dpapi` | 2,804 bytes | 失敗した実機発見テスト用に生成された証明書。`state/`にはこのファイルのみ、隣接する`received/`は空です。削除は自動レビューで拒否されたため保持しています。 |
 
 同じPC上のLocalSend HTTPS `/api/localsend/v2/info` は応答しましたが、これは別端末での発見やファイル転送の合格証拠には数えていません。
+
+## 2026-10-10のアップデート統合試験残留物
+
+`AppUpdate.Integration` の隔離インストール試験が生成した更新起動用 `MediaConverter.exe` が、試験終了後もTempに残っています。各ファイルは151,552 bytes、3個合計454,656 bytesです。確認時に関連するテストプロセスは動いていません。削除は行っていません。
+
+| パス | サイズ | 内容・状態 |
+|---|---:|---|
+| `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-23a4110cc428441dbee092a88c7d6eb3\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
+| `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-52ece02eafde4597893b71d0ccc2c640\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
+| `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-b49f0cb7e3234ff6b460db18904f3402\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
