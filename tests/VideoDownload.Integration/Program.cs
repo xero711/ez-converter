@@ -188,6 +188,46 @@ try
         Pass("live-site smoke extracted public video metadata through the app's yt-dlp arguments; --simulate avoided media downloads");
     }
 
+    if (args.Contains("--live-direct-download-smoke", StringComparer.OrdinalIgnoreCase))
+    {
+        const string liveDirectUrl = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4";
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        using var metadataRequest = new HttpRequestMessage(HttpMethod.Head, liveDirectUrl);
+        using var metadataResponse = await metadataClient.SendAsync(metadataRequest);
+        var declaredLength = metadataResponse.Content.Headers.ContentLength;
+        Require(metadataResponse.IsSuccessStatusCode &&
+                string.Equals(metadataResponse.Content.Headers.ContentType?.MediaType, "video/mp4", StringComparison.OrdinalIgnoreCase) &&
+                declaredLength is > 0 and <= 4 * 1024 * 1024,
+            "live public test URL advertises a bounded MP4 object before download");
+
+        var liveOutputDirectory = Path.Combine(outputDirectory, "live-direct-download");
+        Directory.CreateDirectory(liveOutputDirectory);
+        var liveDownloadArguments = ((IReadOnlyList<string>?)builder.Invoke(null,
+            [liveDirectUrl, liveOutputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
+            ?? throw new InvalidOperationException("The live direct-media URL did not produce app download arguments.")).ToList();
+        var liveUrlIndex = liveDownloadArguments.FindLastIndex(argument => argument == liveDirectUrl);
+        Require(liveUrlIndex >= 0, "live direct MP4 URL is preserved in the app's yt-dlp arguments");
+        liveDownloadArguments.Insert(liveUrlIndex, "4M");
+        liveDownloadArguments.Insert(liveUrlIndex, "--max-filesize");
+        using var liveDownloadDeadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var liveDownload = await ExternalToolRunner.RunAsync(ytDlp, liveDownloadArguments, liveDownloadDeadline.Token, liveOutputDirectory);
+        Require(liveDownload.ExitCode == 0,
+            "app's yt-dlp arguments save a real public direct MP4 URL: " + liveDownload.StandardError);
+        var liveDownloadedPath = findDownloadedPath.Invoke(null, [liveDownload, liveOutputDirectory]) as string;
+        Require(liveDownloadedPath is not null && File.Exists(liveDownloadedPath),
+            "live direct-media download resolves to a saved file");
+        var liveFile = new FileInfo(liveDownloadedPath!);
+        Require(liveFile.Length is > 0 and <= 4 * 1024 * 1024,
+            "live direct-media download remains within the 4 MiB bound");
+        var livePlayable = await ExternalToolRunner.RunAsync(ffmpeg,
+            ["-hide_banner", "-loglevel", "error", "-i", liveDownloadedPath!, "-f", "null", "-"],
+            CancellationToken.None, root);
+        Require(livePlayable.ExitCode == 0, "live direct MP4 download decodes successfully with FFmpeg");
+        await using var liveFileStream = File.OpenRead(liveDownloadedPath!);
+        var liveDigest = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(liveFileStream));
+        Pass($"live direct MP4 URL saved and decoded: {liveFile.Length:N0} bytes, SHA-256 {liveDigest}");
+    }
+
     serverCancellation.Cancel();
     listener.Stop();
     try { await serverTask; } catch (HttpListenerException) { }
