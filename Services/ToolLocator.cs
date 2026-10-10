@@ -42,6 +42,21 @@ public static class ToolLocator
             : FindExecutable(["yt-dlp.exe"], ["yt-dlp\\yt-dlp.exe", "yt-dlp.exe"]);
     }
 
+    public static string? FindDeno()
+    {
+        var managedPath = Path.Combine(ManagedToolsRoot, "deno", "deno.exe");
+        if (File.Exists(managedPath))
+        {
+            return managedPath;
+        }
+
+        var userProfilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".deno", "bin", "deno.exe");
+        return File.Exists(userProfilePath)
+            ? userProfilePath
+            : FindExecutable(["deno.exe"], ["deno\\deno.exe", "Deno\\deno.exe", "deno.exe"]);
+    }
+
     private static string? FindExecutable(IReadOnlyList<string> fileNames, IReadOnlyList<string> relativePatterns)
     {
         var candidates = new List<string>();

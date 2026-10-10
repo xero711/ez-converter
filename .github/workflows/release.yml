@@ -95,6 +95,9 @@ jobs:
       - name: Verify direct WebRTC transfers, cancellation, and resume before release
         run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore
 
+      - name: Verify public Quick Tunnel invitations and EZC1 registration before release
+        run: dotnet run --project .\tests\Sharing.P2PBrowser\Sharing.P2PBrowser.csproj -c Release --no-restore -- --public-p2p
+
       - name: Verify browser transfer and WebRTC safeguards before release
         run: node .\scripts\Test-SharingBrowser.mjs
 
@@ -102,8 +105,8 @@ jobs:
         shell: pwsh
         run: pwsh -File .\scripts\Prepare-BundledTools.ps1
 
-      - name: Verify conversion catalog and representative formats
-        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true
+      - name: Verify conversion catalog and all writable output formats
+        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true -- --full-output-sweep
 
       - name: Verify video conversion output and progress
         run: dotnet run --project .\tests\Conversion.Integration\Conversion.Integration.csproj -c Release --no-restore
@@ -112,6 +115,8 @@ jobs:
         run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
 
       - name: Verify signed direct-media URLs through yt-dlp
+        env:
+          EZCONVERTER_GITHUB_TOKEN: ${{ github.token }}
         run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore
 
       - name: Prepare GPU compression engine

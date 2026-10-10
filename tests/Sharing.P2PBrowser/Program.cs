@@ -612,8 +612,10 @@ internal static class Program
                 await File.WriteAllBytesAsync(nativeFilePath, nativeBytes);
                 var nativeFiles = await TransferFiles.CollectAsync([nativeFilePath]);
                 var directRouteObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var nativeProgressStates = new List<string>();
                 var nativeProgress = new Progress<TransferProgress>(value =>
                 {
+                    nativeProgressStates.Add($"{value.State}: {value.Detail}");
                     if (value.State == "P2P直接接続") directRouteObserved.TrySetResult(true);
                 });
                 var nativeInvitationUri = invitationUri;
@@ -627,8 +629,22 @@ internal static class Program
                 {
                     nativeInvitationUri = new Uri(server.PeerLink(invite, "127.0.0.1"));
                 }
-                await P2PInvitationSender.SendAsync(nativeInvitationUri, nativeFiles,
-                    "Native EZ Converter Sender", nativeProgress, CancellationToken.None, window);
+                using var nativeSendTimeout = new CancellationTokenSource();
+                var nativeSendTask = P2PInvitationSender.SendAsync(nativeInvitationUri, nativeFiles,
+                    "Native EZ Converter Sender", nativeProgress, nativeSendTimeout.Token, window);
+                var nativeSendTimeoutTask = Task.Delay(TimeSpan.FromMinutes(2), nativeSendTimeout.Token);
+                if (await Task.WhenAny(nativeSendTask, nativeSendTimeoutTask) != nativeSendTask)
+                {
+                    var hostState = await hostBrowser.ExecuteScriptAsync(
+                        "JSON.stringify({status:document.querySelector('#status')?.textContent,ws:ws?.readyState,peer:pc?.connectionState,channel:channel?.readyState})");
+                    nativeSendTimeout.Cancel();
+                    try { await nativeSendTask; }
+                    catch (OperationCanceledException) { }
+                    throw new TimeoutException(
+                        $"Native EZ Converter invitation did not finish within 2 minutes. host={hostState}; sender={string.Join(" | ", nativeProgressStates.TakeLast(12))}");
+                }
+                nativeSendTimeout.Cancel();
+                await nativeSendTask;
                 await directRouteObserved.Task.WaitAsync(TimeSpan.FromSeconds(10));
                 var nativeCompletion = await nativeAppReceived.Task.WaitAsync(TimeSpan.FromSeconds(20));
                 var nativeReceivedBytes = await File.ReadAllBytesAsync(Path.Combine(nativeCompletion.Detail!, nativeFileName));

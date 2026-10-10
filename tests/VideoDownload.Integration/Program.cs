@@ -27,6 +27,19 @@ try
     }
     if (!File.Exists(ffmpeg) || !File.Exists(ytDlp))
         throw new FileNotFoundException("FFmpeg and yt-dlp are required for URL download verification.");
+
+    var denoUpdater = new DenoUpdateService(Path.Combine(managedTools, "deno"));
+    var denoUpdate = await denoUpdater.UpdateIfNeededAsync(force: true);
+    Require(denoUpdate.Updated && File.Exists(denoUpdater.ExecutablePath),
+        "Deno updater downloads and installs the verified official Windows runtime: " + denoUpdate.Detail);
+    var installedDeno = await ExternalToolRunner.RunAsync(
+        denoUpdater.ExecutablePath, ["--version"], CancellationToken.None, root);
+    Require(installedDeno.ExitCode == 0 && installedDeno.StandardOutput.Contains(denoUpdate.Version, StringComparison.Ordinal),
+        "installed Deno reports the official release version");
+    var cachedDenoUpdate = await denoUpdater.UpdateIfNeededAsync(force: false);
+    Require(cachedDenoUpdate.Skipped, "Deno updater uses its verified 12-hour check state");
+    Pass("official Deno asset download, SHA-256, executable version, and 12-hour update cache are verified");
+
     var mediaRoot = Path.Combine(root, "media");
     Directory.CreateDirectory(mediaRoot);
     var fixturePath = Path.Combine(mediaRoot, "synthetic media.mp4");
@@ -64,6 +77,21 @@ try
         ?? throw new MissingMethodException("The URL download argument builder is missing.");
     var urlValidator = typeof(MainWindow).GetMethod("IsSupportedMediaUrl", BindingFlags.NonPublic | BindingFlags.Static)
         ?? throw new MissingMethodException("The URL download validator is missing.");
+    var urlNormalizer = typeof(MainWindow).GetMethod("NormalizeMediaUrl", BindingFlags.NonPublic | BindingFlags.Static)
+        ?? throw new MissingMethodException("The URL download normalizer is missing.");
+    foreach (var (input, expected) in new[]
+    {
+        ("www.youtube.com/watch?v=EZCtest1234", "https://www.youtube.com/watch?v=EZCtest1234"),
+        ("//youtu.be/EZCtest1234?t=1", "https://youtu.be/EZCtest1234?t=1"),
+        ("  media.example.invalid/manifest.mpd?token=local-test  ", "https://media.example.invalid/manifest.mpd?token=local-test"),
+        ("http://media.example.invalid/video.mp4?signature=local-test", "http://media.example.invalid/video.mp4?signature=local-test")
+    })
+    {
+        var normalized = urlNormalizer.Invoke(null, [input]) as string;
+        Require(normalized == expected, $"URL input normalizes safely: {input}");
+    }
+    Pass("scheme-less, protocol-relative, and whitespace-padded URLs normalize to valid HTTP(S) URLs");
+
     var urlForms = new[]
     {
         "https://www.youtube.com/watch?v=EZCtest1234",
@@ -81,7 +109,7 @@ try
     {
         Require((bool)(urlValidator.Invoke(null, [candidate]) ?? false), $"supported HTTP(S) URL form is accepted: {candidate}");
         var candidateArguments = (IReadOnlyList<string>?)builder.Invoke(null,
-            [candidate, outputDirectory, "mp4", "最高品質", false, ffmpeg])
+            [candidate, outputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
             ?? throw new InvalidOperationException("A URL form did not produce yt-dlp arguments.");
         Require(candidateArguments.Last() == candidate, $"URL form is passed intact to yt-dlp: {candidate}");
     }
@@ -97,7 +125,7 @@ try
     }
     Pass("watch, short, embed, Vimeo, HLS, DASH, and signed media URL forms are validated and preserved; unsupported schemes and embedded credentials are rejected");
 
-    var arguments = (IReadOnlyList<string>?)builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "最高品質", false, ffmpeg])
+    var arguments = (IReadOnlyList<string>?)builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
         ?? throw new InvalidOperationException("The URL download arguments were not created.");
     Require(arguments.Last() == signedUrl, "signed direct-media query is preserved as one URL argument");
     Require(arguments.Contains("--ignore-config", StringComparer.Ordinal) && arguments.Contains("--no-playlist", StringComparer.Ordinal),
@@ -120,7 +148,7 @@ try
     var hlsOutputDirectory = Path.Combine(root, "hls-output");
     Directory.CreateDirectory(hlsOutputDirectory);
     var hlsArguments = (IReadOnlyList<string>?)builder.Invoke(null,
-        [hlsUrl, hlsOutputDirectory, "mp4", "最高品質", false, ffmpeg])
+        [hlsUrl, hlsOutputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
         ?? throw new InvalidOperationException("HLS URL arguments were not created.");
     Require(hlsArguments.Last() == hlsUrl, "signed HLS URL is passed intact to yt-dlp");
     var hlsResult = await ExternalToolRunner.RunAsync(ytDlp, hlsArguments, deadline.Token, hlsOutputDirectory);
@@ -131,6 +159,74 @@ try
         ["-hide_banner", "-loglevel", "error", "-i", hlsPath!, "-f", "null", "-"], CancellationToken.None, root);
     Require(hlsPlayable.ExitCode == 0, "downloaded HLS MP4 decodes successfully with FFmpeg");
     Pass("signed HLS URL downloads through yt-dlp and produces a valid playable MP4");
+
+    var liveSmokeUrls = new List<string>();
+    for (var argumentIndex = 0; argumentIndex < args.Length; argumentIndex++)
+    {
+        if (args[argumentIndex] != "--live-site-smoke") continue;
+        if (argumentIndex + 1 >= args.Length || args[argumentIndex + 1].StartsWith("--", StringComparison.Ordinal))
+            throw new ArgumentException("Each --live-site-smoke option requires a public HTTP(S) video URL.");
+        liveSmokeUrls.Add(args[++argumentIndex]);
+    }
+
+    foreach (var inputUrl in liveSmokeUrls)
+    {
+        var liveSmokeUrl = urlNormalizer.Invoke(null, [inputUrl]) as string;
+        Require(!string.IsNullOrWhiteSpace(liveSmokeUrl) && (bool)(urlValidator.Invoke(null, [liveSmokeUrl]) ?? false),
+            $"live-site smoke URL is normalized and passes the app's safe HTTP(S) validation: {inputUrl}");
+        var liveArguments = ((IReadOnlyList<string>?)builder.Invoke(null,
+            [liveSmokeUrl!, outputDirectory, "mp4", "360p", false, ffmpeg, null, null])
+            ?? throw new InvalidOperationException("The live-site URL did not produce yt-dlp arguments.")).ToList();
+        liveArguments.RemoveAt(liveArguments.Count - 1);
+        liveArguments.Add("--simulate");
+        liveArguments.Add("--no-progress");
+        liveArguments.AddRange(["--print", "%(extractor_key)s:%(id)s\t%(title)s", liveSmokeUrl!]);
+        using var liveDeadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var liveResult = await ExternalToolRunner.RunAsync(ytDlp, liveArguments, liveDeadline.Token, outputDirectory);
+        Require(liveResult.ExitCode == 0 && !string.IsNullOrWhiteSpace(liveResult.StandardOutput),
+            "yt-dlp extracts public video metadata from the supplied live-site URL without saving media: " + liveResult.StandardError);
+        Pass("live-site smoke extracted public video metadata through the app's yt-dlp arguments; --simulate avoided media downloads");
+    }
+
+    if (args.Contains("--live-direct-download-smoke", StringComparer.OrdinalIgnoreCase))
+    {
+        const string liveDirectUrl = "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4";
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        using var metadataRequest = new HttpRequestMessage(HttpMethod.Head, liveDirectUrl);
+        using var metadataResponse = await metadataClient.SendAsync(metadataRequest);
+        var declaredLength = metadataResponse.Content.Headers.ContentLength;
+        Require(metadataResponse.IsSuccessStatusCode &&
+                string.Equals(metadataResponse.Content.Headers.ContentType?.MediaType, "video/mp4", StringComparison.OrdinalIgnoreCase) &&
+                declaredLength is > 0 and <= 4 * 1024 * 1024,
+            "live public test URL advertises a bounded MP4 object before download");
+
+        var liveOutputDirectory = Path.Combine(outputDirectory, "live-direct-download");
+        Directory.CreateDirectory(liveOutputDirectory);
+        var liveDownloadArguments = ((IReadOnlyList<string>?)builder.Invoke(null,
+            [liveDirectUrl, liveOutputDirectory, "mp4", "最高品質", false, ffmpeg, null, null])
+            ?? throw new InvalidOperationException("The live direct-media URL did not produce app download arguments.")).ToList();
+        var liveUrlIndex = liveDownloadArguments.FindLastIndex(argument => argument == liveDirectUrl);
+        Require(liveUrlIndex >= 0, "live direct MP4 URL is preserved in the app's yt-dlp arguments");
+        liveDownloadArguments.Insert(liveUrlIndex, "4M");
+        liveDownloadArguments.Insert(liveUrlIndex, "--max-filesize");
+        using var liveDownloadDeadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var liveDownload = await ExternalToolRunner.RunAsync(ytDlp, liveDownloadArguments, liveDownloadDeadline.Token, liveOutputDirectory);
+        Require(liveDownload.ExitCode == 0,
+            "app's yt-dlp arguments save a real public direct MP4 URL: " + liveDownload.StandardError);
+        var liveDownloadedPath = findDownloadedPath.Invoke(null, [liveDownload, liveOutputDirectory]) as string;
+        Require(liveDownloadedPath is not null && File.Exists(liveDownloadedPath),
+            "live direct-media download resolves to a saved file");
+        var liveFile = new FileInfo(liveDownloadedPath!);
+        Require(liveFile.Length is > 0 and <= 4 * 1024 * 1024,
+            "live direct-media download remains within the 4 MiB bound");
+        var livePlayable = await ExternalToolRunner.RunAsync(ffmpeg,
+            ["-hide_banner", "-loglevel", "error", "-i", liveDownloadedPath!, "-f", "null", "-"],
+            CancellationToken.None, root);
+        Require(livePlayable.ExitCode == 0, "live direct MP4 download decodes successfully with FFmpeg");
+        await using var liveFileStream = File.OpenRead(liveDownloadedPath!);
+        var liveDigest = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(liveFileStream));
+        Pass($"live direct MP4 URL saved and decoded: {liveFile.Length:N0} bytes, SHA-256 {liveDigest}");
+    }
 
     serverCancellation.Cancel();
     listener.Stop();

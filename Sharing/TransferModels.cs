@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 namespace EZConverter.Sharing;
 
 public sealed record TransferFile(string Id, string RelativePath, long Length, string Sha256);
-public sealed record LocalFile(string SourcePath, TransferFile File, long LastWriteTicks = 0);
+public sealed record LocalFile(string SourcePath, TransferFile File, long LastWriteTicks = 0, long LastAccessTicks = 0);
 public sealed record DeviceInfo(string Protocol, string Name, string Fingerprint, int Port);
 public sealed record PeerDevice(
     string Name,
@@ -140,7 +140,8 @@ public static class TransferFiles
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024, true);
         var length = stream.Length;
         var sha = Convert.ToHexString(await SHA256.HashDataAsync(stream, ct));
-                result.Add(new(path, new(Guid.NewGuid().ToString("N"), relative, length, sha), File.GetLastWriteTimeUtc(path).Ticks));
+                result.Add(new(path, new(Guid.NewGuid().ToString("N"), relative, length, sha),
+                    File.GetLastWriteTimeUtc(path).Ticks, File.GetLastAccessTimeUtc(path).Ticks));
     }
 
     public static void ValidateManifest(IReadOnlyList<TransferFile> files, long maxBytes)

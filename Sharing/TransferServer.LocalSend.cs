@@ -9,6 +9,7 @@ namespace EZConverter.Sharing;
 
 public sealed partial class TransferServer
 {
+    private const long LocalSendPrepareUploadBodyLimit = 16L * 1024 * 1024;
     private const long LocalSendChunkedBodyOverheadLimit = 1024 * 1024;
 
     private sealed class LocalSendUploadFile(LocalSendFileMetadata metadata, string safeName, string token, TransferFile displayFile)
@@ -93,9 +94,9 @@ public sealed partial class TransferServer
 
         if (_localSendUploads.Values.Count(item => item.State is "pending" or "accepted") >= 8 || _localSendUploads.Count >= 128)
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-        if (context.Request.ContentLength is > 2 * 1024 * 1024) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        if (context.Request.ContentLength is > LocalSendPrepareUploadBodyLimit) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         var bodyLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (bodyLimit is { IsReadOnly: false }) bodyLimit.MaxRequestBodySize = 2 * 1024 * 1024;
+        if (bodyLimit is { IsReadOnly: false }) bodyLimit.MaxRequestBodySize = LocalSendPrepareUploadBodyLimit;
 
         LocalSendPrepareUploadRequest? request;
         try { request = await context.Request.ReadFromJsonAsync<LocalSendPrepareUploadRequest>(context.RequestAborted); }
@@ -306,6 +307,7 @@ public sealed partial class TransferServer
                 return;
             }
             if (file.Metadata.Sha256 is null) _ = hash.GetHashAndReset();
+            ApplyLocalSendMetadata(path, file.Metadata.Metadata);
             file.Received = true;
             entry.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
 
@@ -358,6 +360,20 @@ public sealed partial class TransferServer
             await RemoveLocalSendUploadAsync(entry);
         }
         return Results.NoContent();
+    }
+
+    private static void ApplyLocalSendMetadata(string path, LocalSendFileMetadataTimes? metadata)
+    {
+        if (metadata is null) return;
+        try
+        {
+            if (metadata.Modified is { } modified) File.SetLastWriteTimeUtc(path, modified.UtcDateTime);
+            if (metadata.Accessed is { } accessed) File.SetLastAccessTimeUtc(path, accessed.UtcDateTime);
+        }
+        catch (Exception error) when (error is ArgumentOutOfRangeException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // Timestamps are optional hints in LocalSend; unsupported dates must not fail a valid file transfer.
+        }
     }
 
     private async Task PruneLocalSendUploadsAsync(DateTimeOffset now)

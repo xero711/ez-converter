@@ -328,7 +328,8 @@ public sealed class PeerDiscovery : IAsyncDisposable
     internal static bool ShouldProbeLegacyAddress(IEnumerable<PeerDevice> peers, IPAddress address) =>
         !peers.Any(peer => peer.Address.Equals(address.ToString(), StringComparison.Ordinal));
 
-    internal async Task ProbeLegacyDeviceAsync(IPAddress address, string protocol, int port = DefaultHttpPort)
+    internal async Task ProbeLegacyDeviceAsync(IPAddress address, string protocol, int port = DefaultHttpPort,
+        TimeSpan? timeoutOverride = null)
     {
         if (address.AddressFamily is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6))
             throw new ArgumentException("IPv4またはIPv6アドレスを指定してください。", nameof(address));
@@ -350,7 +351,7 @@ public sealed class PeerDiscovery : IAsyncDisposable
         }
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromMilliseconds(500));
+        timeout.CancelAfter(timeoutOverride ?? TimeSpan.FromMilliseconds(500));
         using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
         try
         {

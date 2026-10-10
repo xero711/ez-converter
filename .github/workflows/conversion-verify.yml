@@ -1,0 +1,84 @@
+name: Verify file conversions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'MediaConverter.csproj'
+      - 'MainWindow.xaml'
+      - 'MainWindow.xaml.cs'
+      - 'Models/**'
+      - 'Services/**'
+      - 'Views/**'
+      - 'Sharing/**'
+      - 'Compression/**'
+      - 'tests/Conversion.Matrix/**'
+      - 'tests/Conversion.Integration/**'
+      - 'tests/Conversion.AudioIntegration/**'
+      - 'tests/VideoDownload.Integration/**'
+      - 'scripts/Prepare-BundledTools.ps1'
+      - '.github/workflows/conversion-verify.yml'
+  pull_request:
+    paths:
+      - 'MediaConverter.csproj'
+      - 'MainWindow.xaml'
+      - 'MainWindow.xaml.cs'
+      - 'Models/**'
+      - 'Services/**'
+      - 'Views/**'
+      - 'Sharing/**'
+      - 'Compression/**'
+      - 'tests/Conversion.Matrix/**'
+      - 'tests/Conversion.Integration/**'
+      - 'tests/Conversion.AudioIntegration/**'
+      - 'tests/VideoDownload.Integration/**'
+      - 'scripts/Prepare-BundledTools.ps1'
+      - '.github/workflows/conversion-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  conversion:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore conversion matrix
+        run: dotnet restore .\tests\Conversion.Matrix\Conversion.Matrix.csproj
+
+      - name: Restore AV1 conversion integration
+        run: dotnet restore .\tests\Conversion.Integration\Conversion.Integration.csproj
+
+      - name: Restore audio conversion integration
+        run: dotnet restore .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj
+
+      - name: Restore video download integration
+        run: dotnet restore .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj
+
+      - name: Prepare verified conversion engines
+        shell: pwsh
+        run: pwsh -File .\scripts\Prepare-BundledTools.ps1
+
+      - name: Verify conversion routes and all writable output formats
+        run: dotnet run --project .\tests\Conversion.Matrix\Conversion.Matrix.csproj -c Release --no-restore -p:SkipBundledTools=true -- --full-output-sweep
+
+      - name: Verify AV1 and FFmpeg download integration
+        run: dotnet run --project .\tests\Conversion.Integration\Conversion.Integration.csproj -c Release --no-restore
+
+      - name: Verify video-to-audio conversion integration
+        run: dotnet run --project .\tests\Conversion.AudioIntegration\Conversion.AudioIntegration.csproj -c Release --no-restore
+
+      - name: Verify flexible video URLs and Deno updater
+        env:
+          EZCONVERTER_GITHUB_TOKEN: ${{ github.token }}
+        run: dotnet run --project .\tests\VideoDownload.Integration\VideoDownload.Integration.csproj -c Release --no-restore

@@ -1,26 +1,29 @@
 using System.Collections.Concurrent;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using MediaConverter.Models;
 using MediaConverter.Services;
 
 var ffmpeg = ToolLocator.FindFfmpeg();
-if (ffmpeg is null)
-{
-    Console.WriteLine("SKIP: FFmpeg is not installed.");
-    return 0;
-}
-
-var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
-if (!File.Exists(ffprobe))
-{
-    Console.WriteLine("SKIP: ffprobe is not installed beside FFmpeg.");
-    return 0;
-}
-
 var root = Path.Combine(Path.GetTempPath(), "EZConverter-AV1-Integration-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 try
 {
+    await VerifyInterruptedFfmpegDownloadRetryAsync(root);
+    if (ffmpeg is null)
+    {
+        var updater = new FfmpegUpdateService(Path.Combine(root, "managed-tools"));
+        _ = await updater.UpdateIfNeededAsync(force: true);
+        ffmpeg = updater.ExecutablePath;
+    }
+    if (!File.Exists(ffmpeg))
+        throw new FileNotFoundException("FFmpeg could not be prepared for the AV1 conversion integration check.", ffmpeg);
+
+    var ffprobe = Path.Combine(Path.GetDirectoryName(ffmpeg)!, "ffprobe.exe");
+    if (!File.Exists(ffprobe))
+        throw new FileNotFoundException("FFprobe could not be prepared for the AV1 conversion integration check.", ffprobe);
+
     var sourcePath = Path.Combine(root, "source.mp4");
     var generated = await ExternalToolRunner.RunAsync(ffmpeg,
         ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=256x144:rate=24",
@@ -66,6 +69,23 @@ finally
     }
 }
 
+static async Task VerifyInterruptedFfmpegDownloadRetryAsync(string root)
+{
+    var payload = new byte[1_000_123];
+    Random.Shared.NextBytes(payload);
+    var archivePath = Path.Combine(root, "retry-fixture.download");
+    using var handler = new InterruptedDownloadHandler(payload);
+    using var client = new HttpClient(handler);
+    await FfmpegUpdateService.DownloadArchiveWithRetryAsync(
+        client, new Uri("https://download.example.test/ffmpeg.zip"), archivePath,
+        CancellationToken.None, retryDelayOverride: TimeSpan.Zero);
+
+    Require(handler.RequestCount == 2, "An interrupted FFmpeg archive download was not retried exactly once.");
+    Require((await File.ReadAllBytesAsync(archivePath)).AsSpan().SequenceEqual(payload),
+        "The retry retained partial bytes or changed the downloaded FFmpeg archive.");
+    Console.WriteLine("PASS: interrupted FFmpeg archive downloads remove partial bytes and retry successfully");
+}
+
 static async Task<string> Probe(string ffprobe, string path, string stream)
 {
     var result = await ExternalToolRunner.RunAsync(ffprobe,
@@ -86,4 +106,33 @@ static void Require(bool condition, string message)
 sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
 {
     public void Report(T value) => report(value);
+}
+
+sealed class InterruptedDownloadHandler(byte[] payload) : HttpMessageHandler
+{
+    public int RequestCount { get; private set; }
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        RequestCount++;
+        HttpContent content = RequestCount == 1
+            ? new InterruptedDownloadContent(payload)
+            : new ByteArrayContent(payload);
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+    }
+}
+
+sealed class InterruptedDownloadContent(byte[] payload) : HttpContent
+{
+    protected override async Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+    {
+        await stream.WriteAsync(payload.AsMemory(0, 8_192));
+        throw new HttpRequestException("Synthetic remote connection reset during FFmpeg archive transfer.");
+    }
+
+    protected override bool TryComputeLength(out long length)
+    {
+        length = payload.Length;
+        return true;
+    }
 }

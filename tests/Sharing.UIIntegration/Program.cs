@@ -1,10 +1,13 @@
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using MediaConverter;
 using MediaConverter.Services;
 using MediaConverter.Views;
@@ -25,7 +28,7 @@ internal static class Program
         app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
         var fixtureDirectory = Path.Combine(Path.GetTempPath(), "EZConverter-Sharing-UI-" + Guid.NewGuid().ToString("N"));
         var stateDirectory = Path.Combine(fixtureDirectory, "app-state");
-        var sharing = new SharingView(stateDirectory);
+        var sharing = new SharingView(stateDirectory, localSendHttpsPort: 0);
         var window = new Window
         {
             Title = "EZ Converter · 共有UI統合テスト",
@@ -44,6 +47,7 @@ internal static class Program
                 VerifyOnlineTunnelRetentionPolicy();
                 VerifyPeerDiscoveryStatus();
                 VerifyMediaUrlHandling(fixtureDirectory);
+                await VerifyVideoPageProbeAsync(window);
                 Directory.CreateDirectory(fixtureDirectory);
                 var fixture = RandomNumberGenerator.GetBytes(131_173);
                 var fixturePath = Path.Combine(fixtureDirectory, "ui-share-smoke.bin");
@@ -53,7 +57,8 @@ internal static class Program
                 foreach (var controlName in new[]
                 {
                     "RegisteredContactNameBox", "RegistrationCodeBox", "AddRegisteredContactButton",
-                    "RemoveRegisteredContactButton", "RegisteredContactsBox", "SendRegisteredContactButton"
+                    "RemoveRegisteredContactButton", "RegisteredContactsBox", "SendRegisteredContactButton",
+                    "RotateNamedTunnelInvitationButton"
                 })
                 {
                     if (sharing.FindName(controlName) is null)
@@ -112,23 +117,45 @@ internal static class Program
                     ?? throw new InvalidOperationException("The LocalSend connection URL control is missing.");
                 var connectionUri = new Uri(connectionBox.Text);
                 var fingerprint = connectionUri.Fragment.TrimStart('#');
-                var uploadEndpoint = new UriBuilder(connectionUri) { Path = "/api/localsend/v2/prepare-upload", Query = "", Fragment = "" }.Uri;
+                var uploadEndpoint = new UriBuilder(connectionUri)
+                {
+                    Host = "127.0.0.1",
+                    Path = "/api/localsend/v2/prepare-upload",
+                    Query = "",
+                    Fragment = ""
+                }.Uri;
+                string? observedServerFingerprint = null;
                 using var localSendHandler = new HttpClientHandler
                 {
                     UseProxy = false,
-                    ServerCertificateCustomValidationCallback = (_, certificate, _, _) => certificate is not null &&
-                        Convert.ToHexString(SHA256.HashData(certificate.RawData)).Equals(fingerprint, StringComparison.OrdinalIgnoreCase)
+                    ServerCertificateCustomValidationCallback = (_, certificate, _, _) =>
+                    {
+                        observedServerFingerprint = certificate is null
+                            ? null
+                            : Convert.ToHexString(SHA256.HashData(certificate.RawData));
+                        return observedServerFingerprint is not null &&
+                            observedServerFingerprint.Equals(fingerprint, StringComparison.OrdinalIgnoreCase);
+                    }
                 };
                 using var localSendHttp = new HttpClient(localSendHandler) { Timeout = TimeSpan.FromSeconds(10) };
                 var fileId = Guid.NewGuid().ToString("N");
                 var emptyFile = new LocalSendFileMetadata(fileId, "ui-pin-fixture.bin", 0, "application/octet-stream",
                     Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())));
                 var uploadRequest = new LocalSendPrepareUploadRequest(
-                    new LocalSendDeviceInfo("UI PIN fixture", Port: 53317, Protocol: "https", Fingerprint: fingerprint),
+                    new LocalSendDeviceInfo("UI PIN fixture", Port: connectionUri.Port, Protocol: "https", Fingerprint: fingerprint),
                     new Dictionary<string, LocalSendFileMetadata> { [fileId] = emptyFile });
-                using (var missingPin = await localSendHttp.PostAsJsonAsync(uploadEndpoint, uploadRequest))
+                try
+                {
+                    using var missingPin = await localSendHttp.PostAsJsonAsync(uploadEndpoint, uploadRequest);
                     if (missingPin.StatusCode != System.Net.HttpStatusCode.Unauthorized)
                         throw new InvalidOperationException("The WPF receiver did not require its configured LocalSend PIN.");
+                }
+                catch (HttpRequestException exception)
+                {
+                    throw new InvalidOperationException(
+                        $"The WPF LocalSend TLS certificate did not match the connection URL fingerprint at {uploadEndpoint.Authority}. Expected {fingerprint}; observed {observedServerFingerprint ?? "<none>"}.",
+                        exception);
+                }
                 using var pinRequestCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var acceptedPinTask = localSendHttp.PostAsJsonAsync(uploadEndpoint + "?pin=" + receiverPin, uploadRequest, pinRequestCancellation.Token);
                 await WaitUntilAsync(() => sharing.IncomingOffers.Count == 1, TimeSpan.FromSeconds(10));
@@ -165,6 +192,9 @@ internal static class Program
                 var fileEntry = metadata.RootElement.GetProperty("files").EnumerateObject().Single();
                 if (fileEntry.Value.GetProperty("fileName").GetString() != "ui-share-smoke.bin")
                     throw new InvalidDataException("The LocalSend browser page exposed unexpected file metadata.");
+                var fileTimes = fileEntry.Value.GetProperty("metadata");
+                if (!fileTimes.TryGetProperty("modified", out _) || !fileTimes.TryGetProperty("accessed", out _))
+                    throw new InvalidDataException("The WPF-created LocalSend share did not expose source file timestamps.");
 
                 var query = "sessionId=" + Uri.EscapeDataString(sessionId) + "&fileId=" + Uri.EscapeDataString(fileEntry.Name);
                 var downloadUri = new UriBuilder(baseUri) { Path = "/api/localsend/v2/download", Query = query }.Uri;
@@ -605,7 +635,14 @@ internal static class Program
         if (SharingView.ContainsActiveOnlinePeerLink([localShare]))
             throw new InvalidOperationException("A LAN-only share must not keep the public tunnel alive.");
 
-        Console.WriteLine("PASS failed online-link cleanup preserves the tunnel for other active online links");
+        var stableInvitation = new SharingView.LinkRow(
+            new LinkInfo(new string('c', 64), DateTimeOffset.MaxValue, "registered device", 0, 0, false, true),
+            "https://example.invalid/i/" + new string('c', 64), true, SharingView.OnlineTunnelProvider.Cloudflare,
+            stableRegistrationAddress: true);
+        if (!stableInvitation.StableRegistrationAddress || !stableInvitation.Status.Contains("登録コードは固定ホスト名で再利用可", StringComparison.Ordinal))
+            throw new InvalidOperationException("A reactivatable Named Tunnel invitation must identify its stable registration code in the UI.");
+
+        Console.WriteLine("PASS online-link cleanup preserves other active links and stable Named Tunnel invitations show reusable-code status");
     }
 
     private static void VerifyPeerDiscoveryStatus()
@@ -639,13 +676,151 @@ internal static class Program
         var builder = typeof(MainWindow).GetMethod("BuildMediaArguments", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)
             ?? throw new InvalidOperationException("The video download argument builder is missing.");
         var signedUrl = "https://cdn.example/video/123?signature=abc&expires=321";
-        var arguments = builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "720p", false, "ffmpeg.exe"]) as IReadOnlyList<string>
+        const string referer = "https://video.example/watch/123";
+        const string userAgent = "EZConverter UI integration test";
+        var arguments = builder.Invoke(null, [signedUrl, outputDirectory, "mp4", "720p", false, "ffmpeg.exe", referer, userAgent]) as IReadOnlyList<string>
             ?? throw new InvalidOperationException("The video download argument builder returned an unexpected result.");
         if (!arguments.Contains("--ignore-config", StringComparer.Ordinal) || !arguments.Contains("--no-playlist", StringComparer.Ordinal) ||
-            !arguments.Contains(signedUrl, StringComparer.Ordinal))
-            throw new InvalidOperationException("yt-dlp arguments must isolate user configuration and preserve signed media URLs without expanding playlists.");
+            !arguments.Contains(signedUrl, StringComparer.Ordinal) ||
+            !arguments.Contains("--referer", StringComparer.Ordinal) || !arguments.Contains(referer, StringComparer.Ordinal) ||
+            !arguments.Contains("--user-agent", StringComparer.Ordinal) || !arguments.Contains(userAgent, StringComparer.Ordinal))
+            throw new InvalidOperationException("yt-dlp arguments must preserve the signed media URL and safely pass its page referer and browser user agent.");
         Console.WriteLine("PASS video URL input accepts varied HTTP/HTTPS hosts and signed query URLs while rejecting credentials and unsupported schemes");
-        Console.WriteLine("PASS yt-dlp arguments preserve signed URLs and isolate downloads from external configuration");
+        Console.WriteLine("PASS yt-dlp arguments preserve signed URLs, isolate external configuration, and pass page referer/user agent");
+    }
+
+    private static async Task VerifyVideoPageProbeAsync(Window owner)
+    {
+        using var portReservation = new TcpListener(System.Net.IPAddress.Loopback, 0);
+        portReservation.Start();
+        var port = ((System.Net.IPEndPoint)portReservation.LocalEndpoint).Port;
+        portReservation.Stop();
+
+        var origin = new Uri($"http://127.0.0.1:{port}/");
+        using var listener = new System.Net.HttpListener();
+        listener.Prefixes.Add(origin.AbsoluteUri);
+        listener.Start();
+        using var stopServer = new CancellationTokenSource();
+        var serverTask = Task.Run(async () =>
+        {
+            while (!stopServer.IsCancellationRequested)
+            {
+                System.Net.HttpListenerContext context;
+                try { context = await listener.GetContextAsync(); }
+                catch (System.Net.HttpListenerException) { return; }
+                catch (ObjectDisposedException) { return; }
+
+                var path = context.Request.Url?.AbsolutePath;
+                var isPage = path == "/watch";
+                var contentType = path switch
+                {
+                    "/clip.mp4" => "video/mp4",
+                    "/clip.webm" => "video/webm",
+                    "/master.m3u8" => "application/vnd.apple.mpegurl",
+                    "/manifest.mpd" => "application/dash+xml",
+                    _ => null
+                };
+                var bytes = isPage
+                    ? Encoding.UTF8.GetBytes("<!doctype html><html><body><video controls src='/clip.mp4?signature=fixture'></video><video controls src='/clip.webm?signature=fixture'></video><video controls src='/master.m3u8?signature=fixture'></video><video controls src='/manifest.mpd?signature=fixture'></video></body></html>")
+                    : path switch
+                    {
+                        "/clip.mp4" => [0, 0, 0, 0],
+                        "/clip.webm" => [0x1a, 0x45, 0xdf, 0xa3],
+                        "/master.m3u8" => Encoding.UTF8.GetBytes("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ENDLIST\n"),
+                        "/manifest.mpd" => Encoding.UTF8.GetBytes("<MPD xmlns='urn:mpeg:dash:schema:mpd:2011' type='static' mediaPresentationDuration='PT1S' minBufferTime='PT1S'/>"),
+                        _ => []
+                    };
+                context.Response.StatusCode = isPage || contentType is not null
+                    ? (int)System.Net.HttpStatusCode.OK
+                    : (int)System.Net.HttpStatusCode.NotFound;
+                context.Response.ContentType = isPage ? "text/html; charset=utf-8" : contentType ?? "application/octet-stream";
+                context.Response.ContentLength64 = bytes.Length;
+                try { await context.Response.OutputStream.WriteAsync(bytes); }
+                catch (System.Net.HttpListenerException) { }
+                finally { context.Response.Close(); }
+            }
+        });
+
+        var pageUrl = new Uri(origin, "watch").AbsoluteUri;
+        var expectedMediaKinds = new Dictionary<string, string>
+        {
+            [new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri] = "動画ファイル",
+            [new Uri(origin, "clip.webm?signature=fixture").AbsoluteUri] = "動画ファイル",
+            [new Uri(origin, "master.m3u8?signature=fixture").AbsoluteUri] = "HLSプレイリスト",
+            [new Uri(origin, "manifest.mpd?signature=fixture").AbsoluteUri] = "DASHプレイリスト"
+        };
+        var expectedSelectedUrl = new Uri(origin, "clip.mp4?signature=fixture").AbsoluteUri;
+        var probe = new VideoPageProbeWindow(pageUrl)
+        {
+            Owner = owner,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.Manual,
+            Left = owner.Left + 32,
+            Top = owner.Top + 32
+        };
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(12);
+        DateTime? detectedAt = null;
+        var timedOut = false;
+        var selectionTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        selectionTimer.Tick += (_, _) =>
+        {
+            var allKindsDetected = expectedMediaKinds.All(expected =>
+                probe.MediaCandidates.Any(media => media.Url == expected.Key && media.Kind == expected.Value));
+            if (allKindsDetected && probe.FindName("SaveMediaButton") is Button readinessButton && readinessButton.IsEnabled)
+            {
+                detectedAt ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - detectedAt.Value >= TimeSpan.FromMilliseconds(750) &&
+                    probe.FindName("MediaList") is ListBox list &&
+                    probe.FindName("SaveMediaButton") is Button saveButton)
+                {
+                    var candidate = probe.MediaCandidates.Single(media => media.Url == expectedSelectedUrl);
+                    list.SelectedItem = candidate;
+                    saveButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    selectionTimer.Stop();
+                }
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                timedOut = true;
+                selectionTimer.Stop();
+                probe.Close();
+            }
+        };
+
+        selectionTimer.Start();
+        try
+        {
+            _ = probe.ShowDialog();
+            if (timedOut)
+                throw new TimeoutException("The isolated WebView2 did not detect the synthetic MP4, WebM, HLS, and DASH URLs.");
+
+            var selected = probe.SelectedMedia
+                ?? throw new InvalidOperationException("The WebView2 candidate selection did not return a media URL.");
+            var detectedMedia = probe.MediaCandidates.ToDictionary(media => media.Url, StringComparer.Ordinal);
+            if (expectedMediaKinds.Any(expected => !detectedMedia.TryGetValue(expected.Key, out var media) || media.Kind != expected.Value) ||
+                detectedMedia.Values.Select(media => media.DisplayName).Distinct(StringComparer.Ordinal).Count() != expectedMediaKinds.Count ||
+                !detectedMedia.Values.Any(media => media.DisplayName.Contains("clip.mp4", StringComparison.Ordinal)) ||
+                !detectedMedia.Values.Any(media => media.DisplayName.Contains("clip.webm", StringComparison.Ordinal)) ||
+                selected.Url != expectedSelectedUrl || selected.Kind != "動画ファイル" || selected.PageUrl != pageUrl ||
+                string.IsNullOrWhiteSpace(selected.UserAgent))
+            {
+                var candidates = string.Join(" | ", detectedMedia.Values.Select(media =>
+                    $"{media.Kind}:{media.DisplayName}:{media.Url}"));
+                throw new InvalidDataException(
+                    $"The WebView2 candidates did not preserve all signed media URLs, types, distinct file names, page URL, and browser user agent. " +
+                    $"Candidates=[{candidates}], selected={selected.Url}, page={selected.PageUrl}, userAgentPresent={!string.IsNullOrWhiteSpace(selected.UserAgent)}.");
+            }
+            Console.WriteLine("PASS isolated WebView2 discovers signed MP4, WebM, HLS, and DASH URLs and selects a candidate with its page and user agent");
+        }
+        finally
+        {
+            selectionTimer.Stop();
+            stopServer.Cancel();
+            listener.Stop();
+            try { await serverTask.WaitAsync(TimeSpan.FromSeconds(2)); }
+            catch (TimeoutException) { }
+        }
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)

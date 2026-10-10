@@ -391,7 +391,7 @@
                   <TextBox x:Name="YouTubeUrlTextBox"
                            Grid.Column="1"
                            Grid.ColumnSpan="2"
-                           ToolTip="保存したいURLを貼り付けてください" />
+                           ToolTip="動画ページ、埋め込み、MP4、HLS、DASHのURLを貼り付けてください。https://は省略できます。" />
                   <TextBlock Grid.Row="1"
                              Text="保存先"
                              FontWeight="SemiBold"
@@ -455,7 +455,7 @@
               </Border>
 
               <TextBlock Grid.Row="3"
-                         Text="公開URL、または利用する権利があるURLだけを保存してください。"
+                         Text="サイトの動画ページ、埋め込みURL、MP4、HLS（.m3u8）、DASH（.mpd）を解析します。通常の解析で見つからない動画は、別のブラウザー画面で再生して検出できます。ログイン・購入が必要な動画やDRM保護の動画は取得できません。利用する権利があるコンテンツだけを保存してください。"
                          TextWrapping="Wrap"
                          Foreground="{DynamicResource MutedTextBrush}"
                          Margin="0,12,0,0" />
@@ -570,7 +570,7 @@
                                 Margin="0,16,0,0"
                                 Click="SettingsPreference_Click" />
                       <TextBlock Grid.Row="3"
-                                 Text="yt-dlp と FFmpeg の更新を起動時と定期的に確認します。"
+                                 Text="yt-dlp、Deno、FFmpeg の更新を起動時と定期的に確認します。"
                                  Foreground="{DynamicResource MutedTextBrush}"
                                  Margin="24,5,0,0" />
                     </Grid>
@@ -760,6 +760,7 @@
           <TextBlock x:Name="CalibreStatusText" Text="確認中..." />
           <TextBlock x:Name="FontForgeStatusText" Text="確認中..." />
           <TextBlock x:Name="YtDlpStatusText" Text="確認中..." />
+          <TextBlock x:Name="DenoStatusText" Text="確認中..." />
         </StackPanel>
       </Grid>
     </Border>

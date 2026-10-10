@@ -14,7 +14,8 @@ public sealed class DependencyChecker
             CheckToolAsync("7-Zip", ToolLocator.FindSevenZip(), ["i"], cancellationToken),
             CheckToolAsync("Calibre", ToolLocator.FindCalibre(), ["--version"], cancellationToken),
             CheckToolAsync("FontForge", ToolLocator.FindFontForge(), ["--version"], cancellationToken),
-            CheckToolAsync("yt-dlp", ToolLocator.FindYtDlp(), ["--version"], cancellationToken)
+            CheckToolAsync("yt-dlp", ToolLocator.FindYtDlp(), ["--version"], cancellationToken),
+            CheckToolAsync("Deno", ToolLocator.FindDeno(), ["--version"], cancellationToken)
         };
         return await Task.WhenAll(checks);
     }
@@ -36,6 +37,7 @@ public sealed class DependencyChecker
                 "Calibre" => "アプリ同梱のTools\\Calibre、ユーザー用Toolsフォルダー、またはCalibreのインストール先を確認してください。",
                 "FontForge" => "アプリ同梱のTools\\FontForge、ユーザー用Toolsフォルダー、またはFontForgeのインストール先を確認してください。",
                 "yt-dlp" => "yt-dlpはアプリが公式Nightly版を自動取得・更新します。インターネット接続を確認してください。",
+                "Deno" => "DenoはYouTubeなどのJavaScript抽出を補うため、アプリが公式版を自動取得・更新します。",
                 _ => "必要な外部ツールをインストールしてください。"
             };
             return new LocatedTool(name, null, null, $"未検出。{installHint}");

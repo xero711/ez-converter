@@ -76,7 +76,7 @@ public sealed class ConversionService
                 throw new ConversionException("変換結果が空です。入力内容と出力形式を確認してください。");
             }
 
-            await ValidateOutputAsync(backend.Value, executable, stagingPath, targetFormat, cancellationToken);
+            await ValidateOutputAsync(backend.Value, executable, item.SourcePath, stagingPath, targetFormat, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             File.Move(stagingPath, outputPath, overwrite: false);
             progress?.Report(100);
@@ -94,7 +94,19 @@ public sealed class ConversionService
     private static async Task<ToolRunResult> ConvertWithImageMagickAsync(
         string executable, string inputPath, string outputPath, CancellationToken cancellationToken)
     {
-        return await RunAndRequireSuccessAsync(executable, [inputPath, outputPath], cancellationToken, "ImageMagick");
+        var extension = Path.GetExtension(outputPath);
+        var xbmOutputPath = extension.Equals(".xbm", StringComparison.OrdinalIgnoreCase)
+            ? Path.Combine(Path.GetDirectoryName(outputPath)!, "converted.xbm")
+            : outputPath;
+        var arguments = new List<string> { inputPath };
+        if (extension.Equals(".map", StringComparison.OrdinalIgnoreCase))
+            arguments.AddRange(["-depth", "8"]);
+        else if (extension.Equals(".psd", StringComparison.OrdinalIgnoreCase))
+            arguments.AddRange(["-type", "TrueColorAlpha"]);
+        arguments.Add(xbmOutputPath);
+        var result = await RunAndRequireSuccessAsync(executable, arguments, cancellationToken, "ImageMagick");
+        if (!xbmOutputPath.Equals(outputPath, StringComparison.OrdinalIgnoreCase)) File.Move(xbmOutputPath, outputPath);
+        return result;
     }
 
     private static async Task<ToolRunResult> ConvertWithFfmpegAsync(
@@ -146,6 +158,9 @@ public sealed class ConversionService
                 case "amr":
                 case "gsm":
                     arguments.AddRange(["-ar", "8000", "-ac", "1"]);
+                    break;
+                case "swf":
+                    arguments.AddRange(["-ar", "44100"]);
                     break;
             }
         }
@@ -387,6 +402,7 @@ public sealed class ConversionService
     private static async Task ValidateOutputAsync(
         ConversionBackend backend,
         string? executable,
+        string inputPath,
         string outputPath,
         MediaFormat targetFormat,
         CancellationToken cancellationToken)
@@ -396,8 +412,10 @@ public sealed class ConversionService
             var ffprobe = Path.Combine(Path.GetDirectoryName(executable) ?? string.Empty, "ffprobe.exe");
             if (!File.Exists(ffprobe)) return;
 
+            // Request one codec type per line; CSV can append empty fields, which
+            // made valid MPEG-TS outputs look as if their video stream was absent.
             var probe = await ExternalToolRunner.RunAsync(ffprobe,
-                ["-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", outputPath],
+                ["-v", "error", "-show_entries", "stream=codec_type", "-of", "default=noprint_wrappers=1:nokey=1", outputPath],
                 cancellationToken);
             if (probe.ExitCode != 0)
             {
@@ -421,7 +439,22 @@ public sealed class ConversionService
         }
         else if (backend == ConversionBackend.ImageMagick && executable is not null)
         {
-            if (targetFormat.Extension.Equals("eps", StringComparison.OrdinalIgnoreCase)
+            if (targetFormat.Extension.Equals("map", StringComparison.OrdinalIgnoreCase))
+            {
+                await ValidateImageMapOutputAsync(executable, inputPath, outputPath, cancellationToken);
+            }
+            else if (targetFormat.Extension.Equals("sixel", StringComparison.OrdinalIgnoreCase))
+            {
+                await ValidateSixelOutputAsync(outputPath, cancellationToken);
+            }
+            else if (targetFormat.Extension.Equals("rgb", StringComparison.OrdinalIgnoreCase)
+                || targetFormat.Extension.Equals("rgba", StringComparison.OrdinalIgnoreCase)
+                || targetFormat.Extension.Equals("uyvy", StringComparison.OrdinalIgnoreCase)
+                || targetFormat.Extension.Equals("yuv", StringComparison.OrdinalIgnoreCase))
+            {
+                await ValidateRawImageOutputAsync(executable, inputPath, outputPath, targetFormat.Extension, cancellationToken);
+            }
+            else if (targetFormat.Extension.Equals("eps", StringComparison.OrdinalIgnoreCase)
                 || targetFormat.Extension.Equals("ps", StringComparison.OrdinalIgnoreCase))
             {
                 await ValidatePostScriptOutputAsync(outputPath, cancellationToken);
@@ -431,6 +464,157 @@ public sealed class ConversionService
                 _ = await RunAndRequireSuccessAsync(executable, ["identify", "-regard-warnings", outputPath], cancellationToken, "ImageMagickによる出力検査");
             }
         }
+    }
+
+    private static async Task ValidateRawImageOutputAsync(
+        string executable, string inputPath, string outputPath, string format, CancellationToken cancellationToken)
+    {
+        var dimensions = await RunAndRequireSuccessAsync(executable,
+            ["identify", "-format", "%w %h %z", inputPath], cancellationToken, "ImageMagickによる入力画像サイズ検査");
+        var values = dimensions.StandardOutput.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length != 3
+            || !int.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var width) || width <= 0
+            || !int.TryParse(values[1], NumberStyles.None, CultureInfo.InvariantCulture, out var height) || height <= 0
+            || !int.TryParse(values[2], NumberStyles.None, CultureInfo.InvariantCulture, out var depth) || depth is < 1 or > 64)
+        {
+            throw new ConversionException("生画像出力の検査に必要な入力サイズ・色深度を読み取れませんでした。");
+        }
+
+        var raw = await RunAndRequireSuccessAsync(executable,
+            ["identify", "-size", $"{width}x{height}", "-depth", depth.ToString(CultureInfo.InvariantCulture), $"{format}:{outputPath}"],
+            cancellationToken, "ImageMagickによる生画像出力の再読込検査");
+        if (!raw.StandardOutput.Contains($"{width}x{height}", StringComparison.Ordinal))
+            throw new ConversionException("生画像出力を入力と同じ寸法で読み直せませんでした。");
+    }
+
+    private static async Task ValidateImageMapOutputAsync(
+        string executable, string inputPath, string outputPath, CancellationToken cancellationToken)
+    {
+        var dimensions = await RunAndRequireSuccessAsync(executable,
+            ["identify", "-format", "%w %h %k", inputPath], cancellationToken, "ImageMagickによるMAP入力サイズ検査");
+        var values = dimensions.StandardOutput.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (values.Length != 3
+            || !long.TryParse(values[0], NumberStyles.None, CultureInfo.InvariantCulture, out var width) || width <= 0
+            || !long.TryParse(values[1], NumberStyles.None, CultureInfo.InvariantCulture, out var height) || height <= 0
+            || !long.TryParse(values[2], NumberStyles.None, CultureInfo.InvariantCulture, out var sourceColors) || sourceColors <= 0
+            || width > long.MaxValue / height)
+            throw new ConversionException("MAP出力の検査に必要な入力画像サイズを読み取れませんでした。");
+
+        var pixels = width * height;
+        await using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, useAsync: true);
+        var maximumPaletteEntries = (int)Math.Min(sourceColors, 65_536);
+        var candidates = new List<(int PaletteEntries, int IndexBytes, long PaletteBytes)>();
+
+        if (stream.Length >= pixels)
+        {
+            var paletteBytes = stream.Length - pixels;
+            if (paletteBytes % 3 == 0)
+            {
+                var paletteEntries = paletteBytes / 3;
+                if (paletteEntries is > 0 and <= 256 && paletteEntries <= maximumPaletteEntries)
+                    candidates.Add(((int)paletteEntries, 1, paletteBytes));
+            }
+        }
+
+        if (pixels <= long.MaxValue / 2 && stream.Length >= pixels * 2)
+        {
+            var paletteBytes = stream.Length - pixels * 2;
+            if (paletteBytes % 6 == 0)
+            {
+                var paletteEntries = paletteBytes / 6;
+                if (paletteEntries is > 256 and <= 65_536 && paletteEntries <= maximumPaletteEntries)
+                    candidates.Add(((int)paletteEntries, 2, paletteBytes));
+            }
+        }
+
+        foreach (var candidate in candidates)
+        {
+            stream.Position = candidate.PaletteBytes;
+            if (await ValidateMapPixelIndexesAsync(stream, candidate.PaletteEntries, candidate.IndexBytes, cancellationToken))
+                return;
+        }
+
+        throw new ConversionException($"MAP出力のパレットまたはピクセル索引が不正です。実測 {stream.Length} bytes、画像 {width}×{height} pixels、入力色数 {sourceColors}。");
+    }
+
+    private static async Task<bool> ValidateMapPixelIndexesAsync(
+        FileStream stream, int paletteEntries, int indexBytes, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[64 * 1024];
+        if (indexBytes == 1)
+        {
+            while (true)
+            {
+                var count = await stream.ReadAsync(buffer, cancellationToken);
+                if (count == 0) return true;
+                for (var index = 0; index < count; index++)
+                    if (buffer[index] >= paletteEntries) return false;
+            }
+        }
+
+        var pending = -1;
+        while (true)
+        {
+            var count = await stream.ReadAsync(buffer, cancellationToken);
+            if (count == 0) return pending < 0;
+            for (var index = 0; index < count; index++)
+            {
+                if (pending < 0) pending = buffer[index];
+                else
+                {
+                    if ((pending << 8 | buffer[index]) >= paletteEntries) return false;
+                    pending = -1;
+                }
+            }
+        }
+    }
+
+    private static async Task ValidateSixelOutputAsync(string outputPath, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(outputPath, FileMode.Open, FileAccess.Read, FileShare.Read, 32 * 1024, useAsync: true);
+        if (stream.Length < 8)
+            throw new ConversionException("SIXEL出力のサイズが不正です。");
+
+        var start = new byte[2];
+        await stream.ReadExactlyAsync(start, cancellationToken);
+        if (start[0] != 0x1b || start[1] != (byte)'P')
+            throw new ConversionException("SIXEL出力の開始制御シーケンスが不正です。");
+
+        var headerLength = (int)Math.Min(stream.Length - 4, 4096);
+        var header = new byte[headerLength];
+        await stream.ReadExactlyAsync(header, cancellationToken);
+        var imageMarker = Array.IndexOf(header, (byte)'q');
+        if (imageMarker < 0)
+            throw new ConversionException("SIXEL出力に画像開始マーカーがありません。");
+
+        stream.Position = stream.Length - 2;
+        var terminator = new byte[2];
+        await stream.ReadExactlyAsync(terminator, cancellationToken);
+        if (terminator[0] != 0x1b || terminator[1] != (byte)'\\')
+            throw new ConversionException("SIXEL出力の終了制御シーケンスが不正です。");
+
+        var bodyStart = 2L + imageMarker + 1;
+        var bodyEnd = stream.Length - 2;
+        if (bodyStart >= bodyEnd)
+            throw new ConversionException("SIXEL出力にピクセルデータがありません。");
+        stream.Position = bodyStart;
+        var hasColor = false;
+        var hasSixelPixels = false;
+        var remaining = bodyEnd - bodyStart;
+        var buffer = new byte[64 * 1024];
+        while (remaining > 0)
+        {
+            var count = await stream.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)), cancellationToken);
+            if (count == 0) break;
+            for (var index = 0; index < count; index++)
+            {
+                hasColor |= buffer[index] == (byte)'#';
+                hasSixelPixels |= buffer[index] is >= (byte)'?' and <= (byte)'~';
+            }
+            remaining -= count;
+        }
+        if (remaining != 0 || !hasColor || !hasSixelPixels)
+            throw new ConversionException("SIXEL出力の制御シーケンス、色、またはピクセルデータが不正です。");
     }
 
     private static async Task ValidatePostScriptOutputAsync(string outputPath, CancellationToken cancellationToken)

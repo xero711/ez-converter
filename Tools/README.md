@@ -15,6 +15,7 @@ The frequently updated network tools are deliberately not frozen into the applic
 
 - FFmpeg: `ffmpeg\bin\ffmpeg.exe` and `ffprobe.exe`; the archive SHA-256 is checked before installation.
 - yt-dlp: `yt-dlp\yt-dlp.exe`; the official Nightly release's SHA-256 and size are checked before installation.
+- Deno: `deno\deno.exe`; the official Windows release's SHA-256 and size are checked, the executable version is verified, then it is installed for yt-dlp's JavaScript extraction support.
 
 No executable-path selection is required. A network connection is needed for the first download and periodic update checks; an existing verified copy is retained if an update server is unavailable.
 

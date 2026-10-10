@@ -31,6 +31,8 @@ if (args is ["--live-localsend-discovery"])
 var root = Path.Combine(Directory.GetCurrentDirectory(), "work", "sharing-tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
 var pass = 0;
+string stableIdentityForRestartTest = string.Empty;
+string stableIdentityPathForRestartTest = string.Empty;
 void Assert(bool ok, string label) { if (!ok) throw new Exception("FAIL: " + label); Console.WriteLine("PASS: " + label); pass++; }
 {
     const string tunnelToken = "tunnel-token.secret-value_123";
@@ -65,6 +67,18 @@ void Assert(bool ok, string label) { if (!ok) throw new Exception("FAIL: " + lab
     try { InvitationCodeService.CreateStructuralCode("https://127.0.0.1/i/" + token); }
     catch (FormatException) { privateAddressRejected = true; }
     Assert(privateAddressRejected, "EZC1 registration code refuses IP-address destinations");
+
+    var stableIdentityPath = Path.Combine(root, "named-tunnel", "invitation-identity.dat");
+    stableIdentityPathForRestartTest = stableIdentityPath;
+    var stableIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPath).LoadOrCreateToken();
+    var reloadedStableIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPath).LoadOrCreateToken();
+    stableIdentityForRestartTest = reloadedStableIdentity;
+    var protectedIdentity = await File.ReadAllTextAsync(stableIdentityPath);
+    Assert(stableIdentity.Length == 64 && stableIdentity.All(Uri.IsHexDigit) && stableIdentity == reloadedStableIdentity,
+        "Named Tunnel invitation identity survives a new store instance with a valid 256-bit route token");
+    Assert(protectedIdentity.StartsWith("EZNAMEDINV1:", StringComparison.Ordinal) &&
+           !protectedIdentity.Contains(stableIdentity, StringComparison.Ordinal),
+        "stable invitation route token is protected with DPAPI instead of saved as plaintext");
 
     var contactPath = Path.Combine(root, "contacts", "registered.dat");
     var contactStore = new InvitationContactStore(contactPath);
@@ -539,6 +553,10 @@ var textSample = files.First(file => file.File.RelativePath.EndsWith(".txt", Str
 Assert(lsRoot.GetProperty("files").GetProperty(textSample.File.Id).GetProperty("fileType").GetString() == "text/plain",
     "LocalSend file metadata includes the correct MIME type");
 var localSendSample = files.First(file => file.File.Length > 1024);
+var browserFileMetadata = lsRoot.GetProperty("files").GetProperty(localSendSample.File.Id).GetProperty("metadata");
+Assert(browserFileMetadata.GetProperty("modified").GetDateTimeOffset().UtcDateTime.Ticks == localSendSample.LastWriteTicks &&
+       browserFileMetadata.GetProperty("accessed").GetDateTimeOffset().UtcDateTime.Ticks == localSendSample.LastAccessTicks,
+    "LocalSend reverse-download metadata preserves source modified and accessed timestamps");
 var localSendDownloadUrl = new Uri(localSendOrigin,
     "/api/localsend/v2/download?sessionId=" + Uri.EscapeDataString(localSendSession) + "&fileId=" + Uri.EscapeDataString(localSendSample.File.Id));
 var localSendBytes = await http.GetByteArrayAsync(localSendDownloadUrl);
@@ -675,6 +693,39 @@ Assert(manualShare.ExpiresAt == DateTimeOffset.MaxValue, "zero lifetime creates 
 var manualInvitation = server.CreateInvitation(TimeSpan.Zero);
 var manualInvitationUrl = server.LocalLink(manualInvitation, "127.0.0.1");
 Assert(manualInvitation.ExpiresAt == DateTimeOffset.MaxValue, "zero lifetime creates a receive invitation that remains live until stopped");
+var persistentNamedInvitation = server.CreateInvitation(TimeSpan.Zero, stableIdentityForRestartTest);
+var persistentNamedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + persistentNamedInvitation.Token);
+server.RevokeLink(persistentNamedInvitation.Token);
+await using (var restartedInvitationServer = new TransferServer(new TransferServerOptions
+{
+    DeviceName = "Restarted invitation host",
+    ReceiveDirectory = Path.Combine(root, "named-tunnel", "restarted-receive"),
+    StateDirectory = Path.Combine(root, "named-tunnel", "restarted-state"),
+    HttpsPort = 0,
+    SignalPort = 0
+}))
+{
+    var recreatedInvitation = restartedInvitationServer.CreateInvitation(TimeSpan.Zero, stableIdentityForRestartTest);
+    var recreatedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + recreatedInvitation.Token);
+    Assert(recreatedInvitation.Token == persistentNamedInvitation.Token && recreatedCode == persistentNamedCode,
+        "the same Named Tunnel EZC1 registration code can be reactivated by a new server process after restart");
+}
+var rotatedNamedIdentity = new NamedTunnelInvitationIdentityStore(stableIdentityPathForRestartTest).RotateToken();
+await using (var rotatedInvitationServer = new TransferServer(new TransferServerOptions
+{
+    DeviceName = "Rotated invitation host",
+    ReceiveDirectory = Path.Combine(root, "named-tunnel", "rotated-receive"),
+    StateDirectory = Path.Combine(root, "named-tunnel", "rotated-state"),
+    HttpsPort = 0,
+    SignalPort = 0
+}))
+{
+    var rotatedInvitation = rotatedInvitationServer.CreateInvitation(TimeSpan.Zero, rotatedNamedIdentity);
+    var rotatedCode = InvitationCodeService.CreateStructuralCode("https://share.example.com/i/" + rotatedInvitation.Token);
+    Assert(rotatedInvitation.Token != persistentNamedInvitation.Token && rotatedCode != persistentNamedCode &&
+           new NamedTunnelInvitationIdentityStore(stableIdentityPathForRestartTest).LoadOrCreateToken() == rotatedNamedIdentity,
+        "rotating the Named Tunnel identity invalidates old EZC1 codes and persists the replacement token");
+}
 var expired = server.CreateShare(files, TimeSpan.FromSeconds(1));
 await Task.Delay(1100);
 Assert((await http.GetAsync(server.LocalLink(expired, "127.0.0.1") + "/manifest")).StatusCode == HttpStatusCode.Gone, "expiry enforced without maintenance tick");
@@ -787,6 +838,31 @@ using (var externalPrepare = await http.PostAsync(local + "/api/localsend/v2/pre
         File.Exists(Path.Combine(directory, "External Project", "nested", "external-localsend-fixture.bin")));
     Assert((await File.ReadAllBytesAsync(Path.Combine(externalFolder, "External Project", "nested", "external-localsend-fixture.bin"))).SequenceEqual(externalPayload),
         "independent LocalSend folder upload preserves nested paths and verifies SHA-256");
+}
+await Task.Delay(TimeSpan.FromMilliseconds(1100));
+var largePreviewJson = JsonSerializer.Serialize(new
+{
+    info = new { alias = "LocalSend large-preview client", version = "2.0", deviceModel = "Linux", deviceType = "desktop",
+        fingerprint = "large-preview-fingerprint", port = 53317, protocol = "http", download = false },
+    files = new Dictionary<string, object>
+    {
+        ["previewed-file-id"] = new { id = "previewed-file-id", fileName = "previewed.bin", size = 0,
+            fileType = "application/octet-stream", sha256 = Convert.ToHexString(SHA256.HashData(Array.Empty<byte>())),
+            preview = new string('A', 3 * 1024 * 1024) }
+    }
+}, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+using (var largePreviewPrepare = await http.PostAsync(local + "/api/localsend/v2/prepare-upload",
+    new StringContent(largePreviewJson, Encoding.UTF8, "application/json")))
+{
+    Assert(largePreviewPrepare.IsSuccessStatusCode,
+        $"LocalSend receiver accepts optional multi-megabyte preview metadata (HTTP {(int)largePreviewPrepare.StatusCode})");
+    using var receiptJson = JsonDocument.Parse(await largePreviewPrepare.Content.ReadAsStringAsync());
+    var sessionId = receiptJson.RootElement.GetProperty("sessionId").GetString()!;
+    Assert(receiptJson.RootElement.GetProperty("files").TryGetProperty("previewed-file-id", out _),
+        "LocalSend receiver skips unused preview data without dropping the file token");
+    using var cancelledPreview = await http.PostAsync(local + "/api/localsend/v2/cancel?sessionId=" + Uri.EscapeDataString(sessionId), null);
+    Assert(cancelledPreview.StatusCode == HttpStatusCode.NoContent,
+        "LocalSend large-preview metadata session can be cancelled without retaining its preview");
 }
 var directUrl = $"https://127.0.0.1:{server.HttpsPort}/#{server.Fingerprint}";
 using (var sender = await TransferClient.ConnectAsync(directUrl)) await sender.SendAsync(files, "Integration Sender", null, CancellationToken.None);
@@ -1129,8 +1205,9 @@ async Task VerifyPeerDiscovery()
             var peer = peers.FirstOrDefault(item => item.Name == "Legacy HTTPS fixture");
             if (peer is not null) legacyHttpsPeerSeen.TrySetResult(peer);
         };
-        await legacyHttpsDiscovery.ProbeLegacyDeviceAsync(IPAddress.Loopback, "https", legacyHttpsPort);
-        var legacyHttpsPeer = await legacyHttpsPeerSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await legacyHttpsDiscovery.ProbeLegacyDeviceAsync(IPAddress.Loopback, "https", legacyHttpsPort,
+            timeoutOverride: TimeSpan.FromSeconds(5));
+        var legacyHttpsPeer = await legacyHttpsPeerSeen.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var certificateFingerprint = Convert.ToHexString(SHA256.HashData(senderServer.LocalSendClientCertificate.RawData));
         Assert(legacyHttpsPeer.Fingerprint == certificateFingerprint && legacyHttpsPeer.Port == legacyHttpsPort &&
                legacyHttpsPeer.ConnectionUrl == $"https://127.0.0.1:{legacyHttpsPort}/#{certificateFingerprint}",
@@ -1240,8 +1317,11 @@ async Task VerifyPeerDiscovery()
            externalPeer.Fingerprint == "external-http-fingerprint",
         "LocalSend discovery accepts an independently encoded camelCase v2 announcement");
 
-    var smallSource = files.First(file => file.File.RelativePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
-    var smallFiles = await TransferFiles.CollectAsync([smallSource.SourcePath]);
+    var smallSourcePath = Path.Combine(root, "localsend-metadata-roundtrip.txt");
+    await File.WriteAllTextAsync(smallSourcePath, "LocalSend metadata round-trip fixture.", Encoding.UTF8);
+    var expectedModified = new DateTime(2022, 4, 5, 6, 7, 8, DateTimeKind.Utc);
+    File.SetLastWriteTimeUtc(smallSourcePath, expectedModified);
+    var smallFiles = await TransferFiles.CollectAsync([smallSourcePath]);
     async Task SendToPeerAsync(PeerDevice target)
     {
         await LocalSendClient.SendAsync(target.ConnectionUrl, smallFiles, senderServer.DeviceName,
@@ -1279,9 +1359,11 @@ async Task VerifyPeerDiscovery()
         Fragment = "",
         Path = "/api/localsend/v2/prepare-upload"
     }.Uri;
+    var remoteModified = new DateTimeOffset(2020, 11, 12, 13, 14, 15, TimeSpan.Zero);
     var mismatchedMetadata = smallFiles.ToDictionary(item => item.File.Id,
         item => new LocalSendFileMetadata(item.File.Id, Path.GetFileName(item.File.RelativePath), item.File.Length,
-            "text/plain", item.File.Sha256), StringComparer.Ordinal);
+            "text/plain", item.File.Sha256,
+            Metadata: new LocalSendFileMetadataTimes(remoteModified, null)), StringComparer.Ordinal);
     using var mismatchResponse = await mismatchHttp.PostAsJsonAsync(mismatchEndpoint,
         new LocalSendPrepareUploadRequest(senderServer.LocalSendInfo, mismatchedMetadata));
     Assert(mismatchResponse.StatusCode == HttpStatusCode.OK,
@@ -1320,11 +1402,15 @@ async Task VerifyPeerDiscovery()
         var receivedFile = Path.Combine(folder, Path.GetFileName(smallFiles[0].SourcePath));
         Assert(Convert.ToHexString(await SHA256.HashDataAsync(File.OpenRead(receivedFile))) == smallFiles[0].File.Sha256,
             $"LocalSend upload verifies the received file hash ({label})");
+        Assert(Math.Abs((File.GetLastWriteTimeUtc(receivedFile) - expectedModified).TotalSeconds) < 1,
+            $"LocalSend sender sends and receiver preserves the modified timestamp ({label})");
     }
     var identityBoundFolder = Directory.GetDirectories(lanReceive).Single(directory => !priorReceiveFolders.Contains(directory));
     var identityBoundFile = Path.Combine(identityBoundFolder, Path.GetFileName(smallFiles[0].SourcePath));
     Assert(Convert.ToHexString(await SHA256.HashDataAsync(File.OpenRead(identityBoundFile))) == smallFiles[0].File.Sha256,
         "LocalSend upload preserves bytes when certificate identity is authoritative over the JSON fingerprint");
+    Assert(Math.Abs((File.GetLastWriteTimeUtc(identityBoundFile) - remoteModified.UtcDateTime).TotalSeconds) < 1,
+        "LocalSend receiver applies a supplied metadata.modified value from an independent sender");
 
     var originalHash = smallFiles[0].File.Sha256;
     var incorrectHash = (originalHash[0] == '0' ? '1' : '0') + originalHash[1..];

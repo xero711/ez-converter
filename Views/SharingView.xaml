@@ -177,7 +177,7 @@
          <TextBox x:Name="TargetUrlBox" Grid.Row="1" ToolTip="LocalSend受信端末のLAN内URL、またはEZ Converterの受信招待URL" />
          <Button x:Name="SendUrlButton" Grid.Row="1" Grid.Column="1" Content="URLの相手へ送る" Click="SendUrl_Click" Margin="8,0,0,0" />
          <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="インターネット登録コード" FontWeight="SemiBold" Margin="0,8,0,4" />
-         <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="相手から受け取ったEZC1コードを登録すると、同じLANにいない相手にも送れます。コードは招待URLそのものを含むため、受信側PCの起動中だけ有効です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+          <TextBlock Grid.Row="3" Grid.ColumnSpan="2" Text="相手から受け取ったEZC1コードを登録すると、同じLANにいない相手にも送れます。固定ホスト名のNamed Tunnelでは、受信側が招待を再作成すると同じ登録コードを再利用できます。Quick Tunnelのコードは受信側アプリの終了後に新しいコードが必要です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
          <TextBox x:Name="RegisteredContactNameBox" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,6" ToolTip="連絡先の表示名" />
          <TextBox x:Name="RegistrationCodeBox" Grid.Row="5" Grid.ColumnSpan="2" MinHeight="58" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6" ToolTip="EZC1-で始まる登録コード" />
          <WrapPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,0,0,6">
@@ -305,6 +305,7 @@
         </WrapPanel>
         <Button x:Name="CreateShareButton" Content="選択したファイルの共有URLを作る" Style="{StaticResource PrimaryButton}" Click="CreateShare_Click" HorizontalAlignment="Stretch" Margin="0,0,0,4" />
         <Button x:Name="CreateInviteButton" Content="相手から受け取るURLを作る" Click="CreateInvite_Click" HorizontalAlignment="Stretch" Margin="0,4,0,8" />
+        <Button x:Name="RotateNamedTunnelInvitationButton" Content="固定ホスト名の登録コードを更新" Click="RotateNamedTunnelInvitation_Click" HorizontalAlignment="Stretch" Margin="0,0,0,8" ToolTip="Named Tunnel専用です。更新すると以前のコードは使えなくなります。" />
         <Expander Header="有効期限・パスワードなど">
          <StackPanel Margin="0,8,0,0">
           <Grid Margin="0,0,0,8">
@@ -321,11 +322,11 @@
            <PasswordBox x:Name="SharePasswordBox" Grid.Row="1" Grid.Column="1" MaxLength="6" Padding="9,7" Background="{DynamicResource ControlBackgroundBrush}" Foreground="{DynamicResource PrimaryTextBrush}" BorderBrush="{DynamicResource BorderBrush}" />
           </Grid>
           <CheckBox x:Name="OnlineCheckBox" Content="インターネットの相手とP2P共有（Cloudflare Tunnelは接続案内のみ）" Margin="0,0,0,6" />
-          <TextBlock Text="接続候補の確認にGoogle／CloudflareのSTUNを使うため、各サービスに外部IPアドレスが見える場合があります。ファイル本体はWebRTCで端末間へ直接送信し、Cloudflare Tunnelはページと接続案内だけを運びます。TURN中継は既定で無効です。直接接続できない場合は中継へ自動切替せず失敗します。オフの場合はLocalSend互換の一時サーバーからLAN内で受け取れます。停止またはアプリ／PC終了で無効になります。PINは数字6桁です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" FontSize="12" />
+          <TextBlock Text="接続候補の確認にGoogle／CloudflareのSTUNを使うため、各サービスに外部IPアドレスが見える場合があります。ファイル本体はWebRTCで端末間へ直接送信し、Cloudflare Tunnelはページと接続案内だけを運びます。TURN中継は既定で無効です。直接接続できない場合は中継へ自動切替せず失敗します。オフの場合はLocalSend互換の一時サーバーからLAN内で受け取れます。停止またはアプリ／PC終了で現在の招待は停止します。Named Tunnelの登録コードは同じホスト名で招待を再作成すると再利用できます。PINは数字6桁です。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" FontSize="12" />
          </StackPanel>
         </Expander>
        </StackPanel>
-       <TextBlock Grid.Row="3" Text="URLごとの停止ボタンで個別に無効化できます。上部の停止ボタンはすべてのURLと共有サーバーを停止します。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" VerticalAlignment="Bottom" Margin="0,12,0,0" />
+       <TextBlock Grid.Row="3" Text="URLごとの停止ボタンで現在の招待を個別に停止できます。上部の停止ボタンはすべてのURLと共有サーバーを停止します。Named Tunnel用の登録コードは、同じ固定ホスト名で招待を再作成すれば再利用できます。" Foreground="{DynamicResource MutedTextBrush}" TextWrapping="Wrap" VerticalAlignment="Bottom" Margin="0,12,0,0" />
       </Grid>
      </Border>
 

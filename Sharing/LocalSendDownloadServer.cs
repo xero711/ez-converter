@@ -285,7 +285,8 @@ public sealed class LocalSendDownloadServer : IAsyncDisposable
             TransferFiles.ValidateRelativePath(relativePath);
             var leafName = relativePath[(relativePath.LastIndexOf('/') + 1)..];
             var mime = _contentTypes.TryGetContentType(leafName, out var detected) ? detected : "application/octet-stream";
-            result.Add(file.File.Id, (file, new LocalSendFile(file.File.Id, relativePath, file.File.Length, mime, file.File.Sha256)));
+            result.Add(file.File.Id, (file, new LocalSendFile(file.File.Id, relativePath, file.File.Length, mime, file.File.Sha256,
+                LocalSendFileMetadataTimes.FromTicks(file.LastWriteTicks, file.LastAccessTicks))));
         }
         return result;
     }
@@ -336,5 +337,5 @@ public sealed class LocalSendDownloadServer : IAsyncDisposable
         _lifetime.Dispose();
     }
 
-    private sealed record LocalSendFile(string Id, string FileName, long Size, string FileType, string Sha256);
+    private sealed record LocalSendFile(string Id, string FileName, long Size, string FileType, string Sha256, LocalSendFileMetadataTimes? Metadata);
 }
