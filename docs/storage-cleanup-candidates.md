@@ -134,3 +134,12 @@
 | `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-23a4110cc428441dbee092a88c7d6eb3\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
 | `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-52ece02eafde4597893b71d0ccc2c640\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
 | `%LOCALAPPDATA%\Temp\EZConverter-AppUpdate-Integration-b49f0cb7e3234ff6b460db18904f3402\agent-install\MediaConverter.exe` | 151,552 bytes | 隔離アップデート後のアプリ起動確認用センチネル。 |
+
+## 2026-10-10のLocalSend CLI相互運用試験残留物
+
+以下は公式CLIとの転送試験に使った一時フォルダーです。試験生成物のサイズは合計66,222,924 bytes（約63.1 MiB）です。送信元と受信先を再走査し、空ファイル、日本語名2 MiB、9 MiBチャンク転送、および2 MiBの双方向ペイロードのサイズ・SHA-256一致を確認しました。外部受入れ完了まで証跡を保持し、削除していません。
+
+| パス | サイズ | 内容・状態 |
+|---|---:|---|
+| `%LOCALAPPDATA%\Temp\EZConverter-LocalSendInterop-20261009\` | 56,496,972 bytes（101ファイル） | 公式CLI、合成ファイル、送受信結果、`ReceiverHarness`と`ZipMeasure`の一時ビルド出力。受信ファイルは送信元と同じSHA-256。 |
+| `%LOCALAPPDATA%\Temp\EZConverter-LocalSend-b445786c6a694d8bb42320e446c7c66e\LocalSend-CLI-1.18.2-windows-x86-64.exe` | 9,725,952 bytes | 上記フォルダー内CLIの重複。両方のSHA-256は公式v1.18.2配布資産と一致（`CA0B267E7457324B3664A935DE4E4956DA701A7FA1045F6F99C72602F7F8DC38`）。 |
