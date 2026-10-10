@@ -160,6 +160,34 @@ try
     Require(hlsPlayable.ExitCode == 0, "downloaded HLS MP4 decodes successfully with FFmpeg");
     Pass("signed HLS URL downloads through yt-dlp and produces a valid playable MP4");
 
+    var liveSmokeUrls = new List<string>();
+    for (var argumentIndex = 0; argumentIndex < args.Length; argumentIndex++)
+    {
+        if (args[argumentIndex] != "--live-site-smoke") continue;
+        if (argumentIndex + 1 >= args.Length || args[argumentIndex + 1].StartsWith("--", StringComparison.Ordinal))
+            throw new ArgumentException("Each --live-site-smoke option requires a public HTTP(S) video URL.");
+        liveSmokeUrls.Add(args[++argumentIndex]);
+    }
+
+    foreach (var inputUrl in liveSmokeUrls)
+    {
+        var liveSmokeUrl = urlNormalizer.Invoke(null, [inputUrl]) as string;
+        Require(!string.IsNullOrWhiteSpace(liveSmokeUrl) && (bool)(urlValidator.Invoke(null, [liveSmokeUrl]) ?? false),
+            $"live-site smoke URL is normalized and passes the app's safe HTTP(S) validation: {inputUrl}");
+        var liveArguments = ((IReadOnlyList<string>?)builder.Invoke(null,
+            [liveSmokeUrl!, outputDirectory, "mp4", "360p", false, ffmpeg, null, null])
+            ?? throw new InvalidOperationException("The live-site URL did not produce yt-dlp arguments.")).ToList();
+        liveArguments.RemoveAt(liveArguments.Count - 1);
+        liveArguments.Add("--simulate");
+        liveArguments.Add("--no-progress");
+        liveArguments.AddRange(["--print", "%(extractor_key)s:%(id)s\t%(title)s", liveSmokeUrl!]);
+        using var liveDeadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var liveResult = await ExternalToolRunner.RunAsync(ytDlp, liveArguments, liveDeadline.Token, outputDirectory);
+        Require(liveResult.ExitCode == 0 && !string.IsNullOrWhiteSpace(liveResult.StandardOutput),
+            "yt-dlp extracts public video metadata from the supplied live-site URL without saving media: " + liveResult.StandardError);
+        Pass("live-site smoke extracted public video metadata through the app's yt-dlp arguments; --simulate avoided media downloads");
+    }
+
     serverCancellation.Cancel();
     listener.Stop();
     try { await serverTask; } catch (HttpListenerException) { }
