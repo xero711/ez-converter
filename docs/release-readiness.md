@@ -1,7 +1,7 @@
 # リリース準備状況
 
 - 確認日: 2026-10-10
-- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。実装コミット `17fc262` の[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38006482569)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38006482581)が両方成功しました。別PC・別回線での受け入れ確認と、残存する生成物・IDEキャッシュの整理は残っています。標準Clean後に約2.80 GiBの空き増加を確認しましたが、手動削除は行っていません。
+- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。最新PRコミット `f853784` の[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38007494681)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38007494749)が両方成功しました。別PC・別回線での受け入れ確認と、残存する生成物・IDEキャッシュの整理は残っています。標準Clean後に約2.80 GiBの空き増加を確認しましたが、手動削除は行っていません。
 
 ## 要件別の現在地
 
