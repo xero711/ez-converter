@@ -306,6 +306,7 @@ public sealed partial class TransferServer
                 return;
             }
             if (file.Metadata.Sha256 is null) _ = hash.GetHashAndReset();
+            ApplyLocalSendMetadata(path, file.Metadata.Metadata);
             file.Received = true;
             entry.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
 
@@ -358,6 +359,20 @@ public sealed partial class TransferServer
             await RemoveLocalSendUploadAsync(entry);
         }
         return Results.NoContent();
+    }
+
+    private static void ApplyLocalSendMetadata(string path, LocalSendFileMetadataTimes? metadata)
+    {
+        if (metadata is null) return;
+        try
+        {
+            if (metadata.Modified is { } modified) File.SetLastWriteTimeUtc(path, modified.UtcDateTime);
+            if (metadata.Accessed is { } accessed) File.SetLastAccessTimeUtc(path, accessed.UtcDateTime);
+        }
+        catch (Exception error) when (error is ArgumentOutOfRangeException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // Timestamps are optional hints in LocalSend; unsupported dates must not fail a valid file transfer.
+        }
     }
 
     private async Task PruneLocalSendUploadsAsync(DateTimeOffset now)

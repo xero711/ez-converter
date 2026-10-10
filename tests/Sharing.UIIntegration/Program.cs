@@ -192,6 +192,9 @@ internal static class Program
                 var fileEntry = metadata.RootElement.GetProperty("files").EnumerateObject().Single();
                 if (fileEntry.Value.GetProperty("fileName").GetString() != "ui-share-smoke.bin")
                     throw new InvalidDataException("The LocalSend browser page exposed unexpected file metadata.");
+                var fileTimes = fileEntry.Value.GetProperty("metadata");
+                if (!fileTimes.TryGetProperty("modified", out _) || !fileTimes.TryGetProperty("accessed", out _))
+                    throw new InvalidDataException("The WPF-created LocalSend share did not expose source file timestamps.");
 
                 var query = "sessionId=" + Uri.EscapeDataString(sessionId) + "&fileId=" + Uri.EscapeDataString(fileEntry.Name);
                 var downloadUri = new UriBuilder(baseUri) { Path = "/api/localsend/v2/download", Query = query }.Uri;

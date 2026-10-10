@@ -24,7 +24,21 @@ public sealed record LocalSendFileMetadata(
     [property: JsonPropertyName("size")] long Size,
     [property: JsonPropertyName("fileType")] string FileType,
     [property: JsonPropertyName("sha256")] string? Sha256,
-    [property: JsonPropertyName("preview")] string? Preview = null);
+    [property: JsonPropertyName("preview")] string? Preview = null,
+    [property: JsonPropertyName("metadata")] LocalSendFileMetadataTimes? Metadata = null);
+
+public sealed record LocalSendFileMetadataTimes(
+    [property: JsonPropertyName("modified")] DateTimeOffset? Modified,
+    [property: JsonPropertyName("accessed")] DateTimeOffset? Accessed)
+{
+    public static LocalSendFileMetadataTimes? FromTicks(long modifiedTicks, long accessedTicks)
+    {
+        if (modifiedTicks <= 0 && accessedTicks <= 0) return null;
+        return new(
+            modifiedTicks > 0 ? new DateTimeOffset(new DateTime(modifiedTicks, DateTimeKind.Utc)) : null,
+            accessedTicks > 0 ? new DateTimeOffset(new DateTime(accessedTicks, DateTimeKind.Utc)) : null);
+    }
+}
 
 public sealed record LocalSendPrepareUploadRequest(
     [property: JsonPropertyName("info")] LocalSendDeviceInfo Info,
@@ -88,7 +102,8 @@ public static class LocalSendClient
             TransferFiles.ValidateRelativePath(name);
             var leafName = name[(name.LastIndexOf('/') + 1)..];
             metadata.Add(local.File.Id, new(local.File.Id, name, local.File.Length,
-                ContentTypes.TryGetContentType(leafName, out var mime) ? mime : "application/octet-stream", local.File.Sha256));
+                ContentTypes.TryGetContentType(leafName, out var mime) ? mime : "application/octet-stream", local.File.Sha256,
+                Metadata: LocalSendFileMetadataTimes.FromTicks(local.LastWriteTicks, local.LastAccessTicks)));
         }
 
         senderInfo ??= new(sender,

@@ -4,6 +4,8 @@
 - 基準確認日: 2026-10-09
 - 追加確認: 2026-10-10
 - この文書は不要物の候補一覧です。手動のファイル削除はしていません。
+- 最新スナップショット: 2026-10-10 10:22 JST。`dotnet clean`をテスト各プロジェクトに実行した後のD:空き容量は544.25 GiB（584,382,918,656 bytes）。`.vs/` 3.50 GiB（3,762,698,384 bytes、142ファイル）、`bin/` 8.49 GiB（9,116,667,755 bytes、73,179ファイル）、`obj/` 0.09 GiB（92,955,167 bytes、1,227ファイル）、`tests/` 2.68 GiB（2,881,148,908 bytes、24,567ファイル）、`Tools/` 2.71 GiB（2,913,546,296 bytes、24,155ファイル）。`work/`はファイル0件、`outputs/`はファイル0件。
+- 直前の測定では`tests/`が6,083,413,470 bytes（5.67 GiB）、D:空き容量が581,138,513,920 bytesだった。`tests`配下の全`.csproj`とUpdateSentinelにRelease Cleanを行い、`tests/`は3,202,264,562 bytes（2.98 GiB）減少、D:空き容量は3,244,404,736 bytes（3.02 GiB）増加した。テストの`bin/`にあった大半の生成物は整理できたが、`tests/Sharing.Preview/bin/Release`はClean後も2,745,900,699 bytes（2.56 GiB）残るため、内容を判断するまで保持する。
 - 2026-10-10 09:42 JST時点のD:空き容量は538.43 GiB（578,134,568,960 bytes）。同日それ以前に543.97 GiB／544.02 GiBを記録しており、空き容量の変動要因は未確認です。前回記録の503.96 GiBとの差40.01 GiBについても要因を確認できていません。
 - 候補ごとのサイズ・ファイル数は2026-10-09の走査結果です。最新の空き容量と同じ時点の全件再走査ではありません。
 - 先に試みた一括整理は自動レビューで止まりました。その後、再生成可能なテスト出力を標準Cleanで一部整理しました。
@@ -12,8 +14,8 @@
 
 - 基準となる標準Clean直後のD:空き容量は541.22 GiBで、その後の追加Clean後に544.02 GiBを確認しました。Clean実行ごとの容量記録はないため、個別の回収量は断定しません。
 - `dotnet clean MediaConverter.csproj -c Release --nologo` とDebug構成のCleanは完了しました。`Sharing.Preview`は依存NuGetパッケージを復元してからCleanしましたが、出力の実測サイズは2.56 GiBのままでした。`Conversion.Integration`のCleanではテスト出力が約2.76 GiBから空になりました。D:の実測空き容量は追加Clean後に約2.80 GiB増えました。
-- 最新の実在確認では `.vs/` が3.50 GiB、`bin/` が8.49 GiB、`obj/` が0.09 GiB、`tests/` が2.90 GiBでした。`bin/Release/` は5.93 GiB、`bin/Debug/` は2.56 GiBです。Clean後も残る出力は下表の通り保持しています。
-- 前回一覧にあった `work/` は成功した統合テストにより再作成されました。2026-10-10 09:42 JSTの確認では `work/sharing-tests/` の空ディレクトリだけが残っています。2026-10-09の `work-storage-inventory.md` と下表は当時のスナップショットとして残します。
+- 2026-10-10 10:22 JSTのClean後は `.vs/` が3.50 GiB、`bin/` が8.49 GiB、`obj/` が0.09 GiB、`tests/` が2.68 GiBでした。`tests/Conversion.Integration/bin/`は0 bytes、`tests/Sharing.Preview/bin/Release/`には2.56 GiBが残っています。ルート`bin/`のRelease/Debug生成物と`.vs/`も残存しています。
+- 前回一覧にあった `work/` は2026-10-10 10:22 JST時点でファイル0件です。2026-10-09の `work-storage-inventory.md` と下表は当時のスナップショットとして残します。
 - 最初の`Sharing.Preview` Cleanは参照するNuGetパッケージ `ClosedXML 0.105.1` が見つからずNETSDK1064で失敗しました。依存関係を復元後、再度Cleanは成功しました。生成物の手動削除やキャッシュ削除は行っていません。
 - `.vs/`、残る配布・テスト出力、Toolsはそのままです。前回の自動レビューが再帰的な手動削除を拒否したため、これらは個別確認と安全なClean経路が必要です。
 
@@ -23,13 +25,13 @@
 
 | パス | 実測サイズ | 内容・扱い |
 |---|---:|---|
-| `.vs/` | 5.51 GiB | Visual Studio のキャッシュ・ワークスペース情報。Visual Studio を閉じてから整理候補にできます。 |
-| `bin/` | 8.53 GiB | アプリのビルド出力。今回のリリース確認用win-x64発行物も含みます。保持する配布物を確認してから整理候補にできます。 |
+| `.vs/` | 3.50 GiB（2026-10-10） | Visual Studio のキャッシュ・ワークスペース情報。Visual Studio を閉じてから整理候補にできます。 |
+| `bin/` | 8.49 GiB（2026-10-10） | アプリのビルド出力。今回のリリース確認用win-x64発行物も含みます。保持する配布物を確認してから整理候補にできます。 |
 | `obj/` | 0.09 GiB | .NET の中間生成物。次回ビルドで再生成されます。 |
 | `Sharing/bin/`, `Sharing/obj/` | 約 0.002 GiB | LocalSend/P2P共有ライブラリの生成物。 |
 | `Compression/bin/`, `Compression/obj/` | 約 0.002 GiB | 圧縮ライブラリの生成物。 |
 | `UpdateAgent/bin/`, `UpdateAgent/obj/` | 約 0.14 GiB | 更新エージェントの生成物。今回発行したwin-x64実行物を含みます。 |
-| `tests/<project>/bin/`, `tests/<project>/obj/` と `tests/AppUpdate.Integration/Fixtures/UpdateSentinel/{bin,obj}/` | 約 5.59 GiB | テスト各プロジェクトの生成物。特に `tests/Conversion.Integration/bin/` が2.76 GiB、`tests/Sharing.Preview/bin/` が2.56 GiBです。必要な再利用物を確認してから整理候補にできます。 |
+| `tests/<project>/bin/`, `tests/<project>/obj/` と `tests/AppUpdate.Integration/Fixtures/UpdateSentinel/{bin,obj}/` | 2.68 GiB（2026-10-10 Clean後） | 全テストプロジェクトをClean済み。`tests/Conversion.Integration/bin/`は0 bytesですが、`tests/Sharing.Preview/bin/Release/`の2.56 GiBはClean後も残っています。残存物の内容を確認してから整理候補にできます。 |
 | `MediaConverter_mt233urd_wpftmp.csproj` | 58,300 bytes | WPF ビルド時に生成された一時プロジェクト。 |
 | `MediaConverter_owhzpuz1_wpftmp.csproj` | 60,168 bytes | WPF ビルド時に生成された一時プロジェクト。 |
 | `MediaConverter_vwbnzs0q_wpftmp.csproj` | 58,368 bytes | WPF ビルド時に生成された一時プロジェクト。 |

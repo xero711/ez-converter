@@ -553,6 +553,10 @@ var textSample = files.First(file => file.File.RelativePath.EndsWith(".txt", Str
 Assert(lsRoot.GetProperty("files").GetProperty(textSample.File.Id).GetProperty("fileType").GetString() == "text/plain",
     "LocalSend file metadata includes the correct MIME type");
 var localSendSample = files.First(file => file.File.Length > 1024);
+var browserFileMetadata = lsRoot.GetProperty("files").GetProperty(localSendSample.File.Id).GetProperty("metadata");
+Assert(browserFileMetadata.GetProperty("modified").GetDateTimeOffset().UtcDateTime.Ticks == localSendSample.LastWriteTicks &&
+       browserFileMetadata.GetProperty("accessed").GetDateTimeOffset().UtcDateTime.Ticks == localSendSample.LastAccessTicks,
+    "LocalSend reverse-download metadata preserves source modified and accessed timestamps");
 var localSendDownloadUrl = new Uri(localSendOrigin,
     "/api/localsend/v2/download?sessionId=" + Uri.EscapeDataString(localSendSession) + "&fileId=" + Uri.EscapeDataString(localSendSample.File.Id));
 var localSendBytes = await http.GetByteArrayAsync(localSendDownloadUrl);
@@ -1288,8 +1292,11 @@ async Task VerifyPeerDiscovery()
            externalPeer.Fingerprint == "external-http-fingerprint",
         "LocalSend discovery accepts an independently encoded camelCase v2 announcement");
 
-    var smallSource = files.First(file => file.File.RelativePath.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
-    var smallFiles = await TransferFiles.CollectAsync([smallSource.SourcePath]);
+    var smallSourcePath = Path.Combine(root, "localsend-metadata-roundtrip.txt");
+    await File.WriteAllTextAsync(smallSourcePath, "LocalSend metadata round-trip fixture.", Encoding.UTF8);
+    var expectedModified = new DateTime(2022, 4, 5, 6, 7, 8, DateTimeKind.Utc);
+    File.SetLastWriteTimeUtc(smallSourcePath, expectedModified);
+    var smallFiles = await TransferFiles.CollectAsync([smallSourcePath]);
     async Task SendToPeerAsync(PeerDevice target)
     {
         await LocalSendClient.SendAsync(target.ConnectionUrl, smallFiles, senderServer.DeviceName,
@@ -1327,9 +1334,11 @@ async Task VerifyPeerDiscovery()
         Fragment = "",
         Path = "/api/localsend/v2/prepare-upload"
     }.Uri;
+    var remoteModified = new DateTimeOffset(2020, 11, 12, 13, 14, 15, TimeSpan.Zero);
     var mismatchedMetadata = smallFiles.ToDictionary(item => item.File.Id,
         item => new LocalSendFileMetadata(item.File.Id, Path.GetFileName(item.File.RelativePath), item.File.Length,
-            "text/plain", item.File.Sha256), StringComparer.Ordinal);
+            "text/plain", item.File.Sha256,
+            Metadata: new LocalSendFileMetadataTimes(remoteModified, null)), StringComparer.Ordinal);
     using var mismatchResponse = await mismatchHttp.PostAsJsonAsync(mismatchEndpoint,
         new LocalSendPrepareUploadRequest(senderServer.LocalSendInfo, mismatchedMetadata));
     Assert(mismatchResponse.StatusCode == HttpStatusCode.OK,
@@ -1368,11 +1377,15 @@ async Task VerifyPeerDiscovery()
         var receivedFile = Path.Combine(folder, Path.GetFileName(smallFiles[0].SourcePath));
         Assert(Convert.ToHexString(await SHA256.HashDataAsync(File.OpenRead(receivedFile))) == smallFiles[0].File.Sha256,
             $"LocalSend upload verifies the received file hash ({label})");
+        Assert(Math.Abs((File.GetLastWriteTimeUtc(receivedFile) - expectedModified).TotalSeconds) < 1,
+            $"LocalSend sender sends and receiver preserves the modified timestamp ({label})");
     }
     var identityBoundFolder = Directory.GetDirectories(lanReceive).Single(directory => !priorReceiveFolders.Contains(directory));
     var identityBoundFile = Path.Combine(identityBoundFolder, Path.GetFileName(smallFiles[0].SourcePath));
     Assert(Convert.ToHexString(await SHA256.HashDataAsync(File.OpenRead(identityBoundFile))) == smallFiles[0].File.Sha256,
         "LocalSend upload preserves bytes when certificate identity is authoritative over the JSON fingerprint");
+    Assert(Math.Abs((File.GetLastWriteTimeUtc(identityBoundFile) - remoteModified.UtcDateTime).TotalSeconds) < 1,
+        "LocalSend receiver applies a supplied metadata.modified value from an independent sender");
 
     var originalHash = smallFiles[0].File.Sha256;
     var incorrectHash = (originalHash[0] == '0' ? '1' : '0') + originalHash[1..];
