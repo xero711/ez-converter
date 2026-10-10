@@ -17,6 +17,8 @@
 | 発行サイズ | 発行フォルダーは3,215,746,709 bytes。 | v1.0.6のRelease ZIPは1,343,542,303 bytes（約1.25 GiB）で、GitHubの2 GiB上限未満。SHA-256 sidecarとGitHub asset digestを公開し、自動更新で実データを照合済み。 |
 | GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | [共有CI](https://github.com/xero711/ez-converter/actions/runs/37936018958)と[Release workflow](https://github.com/xero711/ez-converter/actions/runs/37936030969)が成功。v1.0.6の公開と自動更新検証まで完了。 |
 
+2026-10-10に現在の作業ツリーでConversion.MatrixをReleaseビルド（警告0・エラー0）し、追加検証を含む全体を終了コード0で実行。従来1種類ずつだった動画・音声入力に、MPEG-2/AC-3のMKV、VP9/OpusのWebM、MPEG-4/MP3のAVI、AAC/M4A、Vorbis/OGG、Opus、MP3、WMA、FLACを加え、異なるコーデックからAV1 MP4、MP3、FLAC、WAV、AACへの実変換28経路を再読込検査。不正MP4/MP3の失敗と部分出力が残らないことも確認。従来の全出力スイープ186経路と8,003件の経路整合性検査も同じ実行で成功。網羅対象は記載した合成入力と経路であり、全ての実ファイル・コーデック・破損状態を保証するものではありません。
+
 ## 公開共有の制約
 
 Quick Tunnelは初期設定で使う一時URLです。設定でNamed Tunnelを選ぶと、固定ホスト名のHTTPS公開URLを使えます。Cloudflare Zero Trustの公開ホスト名ルートを `http://127.0.0.1:<ポート>` に作成し、アプリにも同じホスト名・ポート・トークンを設定してください。遠隔管理トンネルはCloudflare公式の `TUNNEL_TOKEN` 環境変数を利用して起動します（[run parameters](https://developers.cloudflare.com/tunnel/reference/run-parameters/)）。実アカウント資格情報がないため、Cloudflare上のルートから別ネットワーク端末までの通し試験は残っています。

@@ -202,6 +202,46 @@ try
             && xvidProbe.Contains("xvid", StringComparison.OrdinalIgnoreCase),
         "MP4 -> Xvid is readable as AVI with the MPEG-4 codec and XVID tag");
 
+    var codecVideoFixtures = new[]
+    {
+        (Path: Path.Combine(workRoot, "mpeg2-ac3.mkv"), VideoCodec: "mpeg2video", AudioCodec: "ac3", Args: new[] { "-c:v", "mpeg2video", "-q:v", "5", "-c:a", "ac3", "-b:a", "128k" }),
+        (Path: Path.Combine(workRoot, "vp9-opus.webm"), VideoCodec: "vp9", AudioCodec: "opus", Args: new[] { "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-crf", "45", "-b:v", "0", "-threads", "1", "-c:a", "libopus", "-b:a", "64k" }),
+        (Path: Path.Combine(workRoot, "mpeg4-mp3.avi"), VideoCodec: "mpeg4", AudioCodec: "mp3", Args: new[] { "-c:v", "mpeg4", "-q:v", "5", "-vtag", "XVID", "-c:a", "libmp3lame", "-q:a", "5" })
+    };
+    foreach (var fixture in codecVideoFixtures)
+    {
+        var fixtureArguments = new List<string>
+        {
+            "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12",
+            "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000", "-t", "1"
+        };
+        fixtureArguments.AddRange(fixture.Args);
+        fixtureArguments.AddRange(["-y", fixture.Path]);
+        await RequireSuccessAsync(ffmpeg, fixtureArguments, workRoot, $"{Path.GetFileName(fixture.Path)} mixed-codec fixture");
+        var fixtureProbe = await ProbeAsync(ffprobe, fixture.Path);
+        Require(fixtureProbe.Contains(fixture.VideoCodec, StringComparison.OrdinalIgnoreCase)
+                && fixtureProbe.Contains(fixture.AudioCodec, StringComparison.OrdinalIgnoreCase),
+            $"{Path.GetFileName(fixture.Path)} contains {fixture.VideoCodec} video and {fixture.AudioCodec} audio");
+    }
+
+    var videoVariantChecks = new[]
+    {
+        (Source: codecVideoFixtures[0].Path, Target: "mp4", Expected: "av1"),
+        (Source: codecVideoFixtures[0].Path, Target: "mp3", Expected: "mp3"),
+        (Source: codecVideoFixtures[1].Path, Target: "mp4", Expected: "av1"),
+        (Source: codecVideoFixtures[1].Path, Target: "mp3", Expected: "mp3"),
+        (Source: codecVideoFixtures[2].Path, Target: "mp4", Expected: "av1"),
+        (Source: codecVideoFixtures[2].Path, Target: "flac", Expected: "flac")
+    };
+    foreach (var check in videoVariantChecks)
+    {
+        var converted = await ConvertAsync(service, check.Source, check.Target,
+            Path.Combine(workRoot, "video-codec-matrix", Path.GetFileNameWithoutExtension(check.Source), check.Target), videoTools);
+        var probe = await ProbeAsync(ffprobe, converted);
+        Require(probe.Contains(check.Expected, StringComparison.OrdinalIgnoreCase),
+            $"{Path.GetFileName(check.Source)} -> {check.Target.ToUpperInvariant()} decodes and contains {check.Expected}");
+    }
+
     var audioPath = Path.Combine(workRoot, "audio source.wav");
     await RequireSuccessAsync(ffmpeg,
         ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=660:sample_rate=44100",
@@ -215,6 +255,47 @@ try
                 && audioProbe.Contains("audio", StringComparison.OrdinalIgnoreCase)
                 && !audioProbe.Contains("video", StringComparison.OrdinalIgnoreCase),
             $"WAV -> {extension.ToUpperInvariant()} contains the expected audio codec and no video stream");
+    }
+
+    var codecAudioFixtures = new[]
+    {
+        (Path: Path.Combine(workRoot, "source.m4a"), Args: new[] { "-c:a", "aac", "-b:a", "96k" }),
+        (Path: Path.Combine(workRoot, "source.ogg"), Args: new[] { "-c:a", "libvorbis", "-q:a", "4" }),
+        (Path: Path.Combine(workRoot, "source.opus"), Args: new[] { "-c:a", "libopus", "-b:a", "64k" }),
+        (Path: Path.Combine(workRoot, "source.mp3"), Args: new[] { "-c:a", "libmp3lame", "-q:a", "5" }),
+        (Path: Path.Combine(workRoot, "source.wma"), Args: new[] { "-c:a", "wmav2", "-b:a", "96k" }),
+        (Path: Path.Combine(workRoot, "source.flac"), Args: new[] { "-c:a", "flac" })
+    };
+    var audioVariantTargets = new[]
+    {
+        (Extension: "mp3", Codec: "mp3"), (Extension: "flac", Codec: "flac"),
+        (Extension: "wav", Codec: "pcm_s16le"), (Extension: "aac", Codec: "aac")
+    };
+    foreach (var fixture in codecAudioFixtures)
+    {
+        var fixtureArguments = new List<string>
+        {
+            "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=550:sample_rate=44100",
+            "-t", "1"
+        };
+        fixtureArguments.AddRange(fixture.Args);
+        fixtureArguments.AddRange(["-y", fixture.Path]);
+        await RequireSuccessAsync(ffmpeg, fixtureArguments, workRoot, $"{Path.GetFileName(fixture.Path)} codec fixture");
+        var fixtureProbe = await ProbeAsync(ffprobe, fixture.Path);
+        Require(fixtureProbe.Contains("audio", StringComparison.OrdinalIgnoreCase),
+            $"{Path.GetFileName(fixture.Path)} is recognized as an audio stream");
+
+        foreach (var target in audioVariantTargets.Where(target =>
+                     !Path.GetExtension(fixture.Path).Equals("." + target.Extension, StringComparison.OrdinalIgnoreCase)))
+        {
+            var converted = await ConvertAsync(service, fixture.Path, target.Extension,
+                Path.Combine(workRoot, "audio-codec-matrix", Path.GetFileNameWithoutExtension(fixture.Path), target.Extension), audioTools);
+            var probe = await ProbeAsync(ffprobe, converted);
+            Require(probe.Contains(target.Codec, StringComparison.OrdinalIgnoreCase)
+                    && probe.Contains("audio", StringComparison.OrdinalIgnoreCase)
+                    && !probe.Contains("video", StringComparison.OrdinalIgnoreCase),
+                $"{Path.GetFileName(fixture.Path)} -> {target.Extension.ToUpperInvariant()} contains {target.Codec} without video");
+        }
     }
 
     var svgPath = Path.Combine(workRoot, "vector source.svg");
@@ -293,6 +374,19 @@ try
     catch (ConversionException) { failedCleanly = true; }
     Require(failedCleanly, "Invalid ZIP fails with a conversion error");
     Require(!Directory.EnumerateFileSystemEntries(failureDirectory).Any(), "Failed conversion leaves no partial output or staging directory");
+
+    foreach (var (sourceExtension, targetExtension) in new[] { ("mp4", "flac"), ("mp3", "wav") })
+    {
+        var corruptSource = Path.Combine(workRoot, $"corrupt-media.{sourceExtension}");
+        await File.WriteAllTextAsync(corruptSource, "not a media stream", new System.Text.UTF8Encoding(false));
+        var corruptOutputDirectory = Path.Combine(workRoot, $"failed {sourceExtension} conversion");
+        var corruptFailedCleanly = false;
+        try { _ = await ConvertAsync(service, corruptSource, targetExtension, corruptOutputDirectory, videoTools); }
+        catch (ConversionException) { corruptFailedCleanly = true; }
+        Require(corruptFailedCleanly, $"Invalid {sourceExtension.ToUpperInvariant()} fails with a conversion error");
+        Require(!Directory.Exists(corruptOutputDirectory) || !Directory.EnumerateFileSystemEntries(corruptOutputDirectory).Any(),
+            $"Failed {sourceExtension.ToUpperInvariant()} conversion leaves no partial output or staging directory");
+    }
 
     Console.WriteLine("PASS: ImageMagick, LibreOffice, PDF text extraction, 7-Zip, Calibre, and FontForge sample conversions.");
 }
