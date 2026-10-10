@@ -1,7 +1,7 @@
 # リリース準備状況
 
 - 確認日: 2026-10-10
-- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。PR #1の`dc9463e`に対する[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38014736685)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38014736701)が両方成功しました。別PC・別回線での受け入れ確認と、残存する生成物・IDEキャッシュの整理は残っています。テスト出力のRelease CleanでD:の空き容量が約3.02 GiB増えましたが、手動削除は行っていません。
+- 判定: **v1.0.6を公開済み**。Release workflowは全ステップ成功し、公開ZIPを自動アップデーターがダウンロードしてSHA-256を検証しました。追加変更はPR #1でレビュー中です。PR #1の`dc9463e`に対する[Sharing CI](https://github.com/xero711/ez-converter/actions/runs/38014736685)と[Conversion CI](https://github.com/xero711/ez-converter/actions/runs/38014736701)が両方成功しました。別PC・別回線での受け入れ確認と実Named Tunnel試験は残っています。残存するビルド出力・IDE索引は可逆NTFS圧縮で格納量を約6.62 GiB減らし、D:空き容量は約550.85 GiBになりました。再帰削除は自動レビューに拒否されたため、ファイルは保持しています。
 
 ## 要件別の現在地
 
@@ -13,7 +13,7 @@
 | 動画URL保存 | YouTube／Vimeoページ、埋め込み、HLS・DASH、署名付きURLを検証。スキーム省略・`//`・前後空白も安全に正規化。署名付きHTTP MP4と合成HLSをyt-dlpで取得し、FFmpegの再読込に成功。Deno公式Windows資産のサイズ・SHA-256・実行版を照合し、12時間キャッシュも確認。通常解析で候補が見つからない場合に備え、隔離された一時WebView2で公開HTTP(S)動画を検出し、Referer／User-Agentを付けて再試行する画面も追加。ブラウザーCookieはダウンロード側へ渡さない。GitHub APIのレート制限対策として、任意の`EZCONVERTER_GITHUB_TOKEN`を公式リリースメタデータ照会だけに使用する。 | URL・実取得50件の統合確認に成功。WPF UI統合試験で合成ページ上の署名付きMP4、WebM、HLS、DASH候補を検出し、重複しない表示名、署名付きURL、ページURL、User-Agentの引き渡しを確認。2026-10-10に任意の`--live-site-smoke`で公開YouTube公式動画（`aqz-KE-bpKQ`）のメタデータ取得を確認し、メディアを保存せずに統合確認53件が成功。ログイン必須だったVimeoの例は対象外。CIの動画URL／Deno工程を含むConversion CIも成功。実サイトでの実ファイル保存は未検証。最新Denoは実行時に[公式Release](https://github.com/denoland/deno/releases/latest)から取得。実サイトの仕様変更、ログイン必須、DRM保護動画は保証対象外。 |
 | 自動更新 | GitHub Release応答の検査、SHA-256、破損ZIP拒否、部分取得ファイルの削除、隔離されたUpdateAgentの置換・バックアップ・再起動を確認。Release workflowはタグからアプリ版を埋め込み、公開後にアプリ自身の更新処理を実行。 | ローカル統合11件に加え、[v1.0.6 Release run](https://github.com/xero711/ez-converter/actions/runs/37936030969)の12件目で公開ZIP 1,343,542,303 bytesを実ダウンロードし、SHA-256 `173ea61efa32c818a578183db895872580ca75435c8caf771ec3f1f57089fb1e`を照合。成功。 |
 | Releaseビルド | 変更後のWPFアプリ本体と共有ライブラリをRelease構成でビルド。 | 0警告・0エラー。 |
-| ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | 手動削除は行わず、テスト各プロジェクトのRelease Cleanを完了。Clean前の`tests/`は5.67 GiB、Clean後は2.68 GiBで、D:空き容量は544.25 GiB。`Sharing.Preview/bin/Release`の2.56 GiB、`.vs/`の3.50 GiB、`bin/`の8.49 GiBは残存候補として一覧に記録。 |
+| ストレージ整理 | [候補一覧](storage-cleanup-candidates.md)と[work全件一覧](work-storage-inventory.md)に容量・パスを記録。 | テスト各プロジェクトのRelease Cleanで約3.02 GiB、さらに`bin/Debug`、`bin/Release`、`tests/Sharing.Preview/bin/Release`とVisual Studioの3索引／評価ディレクトリをNTFS圧縮し、対象データの格納量を15,497,776,104 bytesから8,388,347,543 bytesへ削減（約6.62 GiB回収）。D:空き容量は実測550.85 GiB。6ディレクトリは保持し、再帰削除拒否後に手動削除は行っていない。 |
 | 発行サイズ | 発行フォルダーは3,215,746,709 bytes。 | v1.0.6のRelease ZIPは1,343,542,303 bytes（約1.25 GiB）で、GitHubの2 GiB上限未満。SHA-256 sidecarとGitHub asset digestを公開し、自動更新で実データを照合済み。 |
 | GitHubリポジトリ | `xero711/ez-converter`を公開リポジトリとして作成し、公開用no-replyアドレスの単一スナップショットを`main`へpush。秘密トークン・秘密鍵のスキャンでは検出なし。 | [共有CI](https://github.com/xero711/ez-converter/actions/runs/37936018958)と[Release workflow](https://github.com/xero711/ez-converter/actions/runs/37936030969)が成功。v1.0.6の公開と自動更新検証まで完了。 |
 
